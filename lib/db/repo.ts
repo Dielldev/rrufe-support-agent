@@ -111,6 +111,40 @@ export async function listCustomers(): Promise<Customer[]> {
   return (await query("SELECT * FROM customers ORDER BY customer_id")).map(customerFrom);
 }
 
+export async function findCustomer(id: string): Promise<Customer | undefined> {
+  if (!/^\d{1,9}$/.test(id)) return undefined;
+  const [row] = await query({ sql: "SELECT * FROM customers WHERE customer_id = ?", args: [Number(id)] });
+  return row ? customerFrom(row) : undefined;
+}
+
+export interface CustomerPersonaOrder {
+  id: string;
+  items: string;
+  status: OrderStatus;
+}
+
+export interface CustomerPersona extends Customer {
+  orderCount: number;
+  orders: CustomerPersonaOrder[];
+}
+
+/** Customers with order counts and order summaries from the database for the user picker. */
+export async function customerPersonas(): Promise<CustomerPersona[]> {
+  const [customers, orders] = await Promise.all([listCustomers(), listOrders()]);
+  return customers.map((c) => {
+    const custOrders = orders.filter((o) => o.customerId === c.id);
+    return {
+      ...c,
+      orderCount: custOrders.length,
+      orders: custOrders.map((o) => ({
+        id: o.id,
+        items: o.items.map((i) => i.name).join(", "),
+        status: o.status,
+      })),
+    };
+  });
+}
+
 /** The customer an inbox handle belongs to (email, Viber phone or Instagram handle). */
 export async function customerByHandle(channel: Channel, handle: string): Promise<Customer | undefined> {
   const h = handle.trim();
@@ -320,16 +354,19 @@ export interface ConversationView extends ContactLogEntry {
   escalation?: string;
 }
 
-/** Recent inbox history for the Orders page. */
-export async function listConversations(today: Date, limit = 50): Promise<ConversationView[]> {
+/** Recent inbox history for the Orders page, optionally isolated to one customer. */
+export async function listConversations(today: Date, limit = 50, customerId?: string): Promise<ConversationView[]> {
+  const where = customerId && /^\d+$/.test(customerId) ? "WHERE cv.customer_id = ?" : "";
+  const args = customerId && /^\d+$/.test(customerId) ? [Number(customerId), limit] : [limit];
   const rows = await query({
     sql: `SELECT cv.conv_id, cv.channel, cv.message_text, cv.received_at, cv.sentiment, cv.sender_handle, c.name,
                  (SELECT action FROM agent_log al WHERE al.conv_id = cv.conv_id ORDER BY log_id DESC LIMIT 1) AS action,
                  (SELECT status FROM escalations e WHERE e.conv_id = cv.conv_id ORDER BY escalation_id DESC LIMIT 1) AS escalation,
                  EXISTS (SELECT 1 FROM agent_log al WHERE al.conv_id = cv.conv_id) AS answered
             FROM conversations cv LEFT JOIN customers c ON c.customer_id = cv.customer_id
+           ${where}
            ORDER BY cv.received_at DESC LIMIT ?`,
-    args: [limit],
+    args,
   });
   return rows.map((r) => ({
     ...contactFrom(r, today),
