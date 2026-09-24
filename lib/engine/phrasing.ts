@@ -1,6 +1,6 @@
 import { groq } from "@ai-sdk/groq";
 import { generateText, type LanguageModel } from "ai";
-import { SHOP } from "@/lib/data/shop";
+import { OPS } from "@/lib/shop/operations";
 import { groqPhrasingModelId, groqProviderOptions } from "./groq";
 import { safeModelError } from "./errors";
 import { renderDraft } from "./templates";
@@ -64,7 +64,7 @@ export function modelPhraser(
         abortSignal: AbortSignal.timeout(20_000),
         providerOptions,
         system: [
-          `You polish customer-support replies for ${SHOP.name}, an electronics shop in Kosovo.`,
+          `You polish customer-support replies for ${OPS.shopName}, an electronics shop in Kosovo.`,
           `Rewrite the APPROVED DRAFT so it reads naturally and warmly in ${LANGUAGE_NAME[language]}.`,
           "",
           "Hard limits — breaking any of them gets your text discarded:",
@@ -196,11 +196,11 @@ export function validateReply(output: string, brief: ReplyBrief, draft: string, 
       : lower.includes(value.split(",")[0].toLowerCase());
     if (hit) issues.push({ check: "pii_leak", detail: `Contains withheld value “${value.split(",")[0]}”` });
   }
-  const allowedEmails = [...brief.disclose, SHOP.email].map((e) => e.toLowerCase());
+  const allowedEmails = brief.disclose.map((e) => e.toLowerCase());
   for (const email of output.match(EMAIL) ?? []) {
     if (!allowedEmails.includes(email.toLowerCase())) issues.push({ check: "pii_leak", detail: `Unapproved email “${email}”` });
   }
-  const allowedPhones = [...brief.disclose, SHOP.phone].map(normPhone);
+  const allowedPhones = brief.disclose.map(normPhone);
   for (const phone of output.match(PHONE) ?? []) {
     if (!allowedPhones.includes(normPhone(phone))) issues.push({ check: "pii_leak", detail: `Unapproved phone number “${phone}”` });
   }

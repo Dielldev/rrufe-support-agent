@@ -1,3 +1,5 @@
+import { getPolicyBook } from "@/lib/db/repo";
+import { shopNow } from "@/lib/shop/operations";
 import { decisionProvider, phrasingProvider } from "./config";
 import { gatherFacts } from "./facts";
 import { guard, mergeSignals } from "./guard";
@@ -26,7 +28,7 @@ export function depsForMode(mode: RunMode): PipelineDeps {
 }
 
 /**
- * 1. read signals (code) → 2. look up facts (code + records) → 3. Jev/Groq proposes
+ * 1. read signals (code) → 2. look up facts (database) → 3. Jev/Groq proposes
  * (typed) → 4. rules decide → 5. guard locks → 6. model phrases → 7. validator.
  */
 export async function runPipeline(
@@ -34,19 +36,21 @@ export async function runPipeline(
   deps: PipelineDeps,
 ): Promise<TriageResult> {
   const started = performance.now();
-  const now = deps.now ?? new Date();
+  const now = deps.now ?? shopNow();
   const { text, sender, thread } = input;
   const priorTexts = thread.filter((m) => m.senderId === sender.id).map((m) => m.text);
 
-  const ruleSignals = extractSignals(text, priorTexts);
-  const initialFacts = gatherFacts(ruleSignals, sender, thread, now);
+  const policies = await getPolicyBook();
+  const ruleSignals = extractSignals(text, priorTexts, policies);
+  const initialFacts = await gatherFacts(ruleSignals, sender, thread, now, policies);
 
   const proposal = deps.proposer
     ? await deps.proposer(buildJevState(text, sender, initialFacts), ruleSignals.intent.value)
     : null;
 
   const { signals, chips, conflict } = mergeSignals(ruleSignals, proposal);
-  const facts = gatherFacts(signals, sender, thread, now);
+  // The model may have filled in the topic or flags; look the facts up again with the merged reading.
+  const facts = proposal ? await gatherFacts(signals, sender, thread, now, policies) : initialFacts;
   const rules = decide(signals, facts, sender);
   const locked = guard(rules, proposal, conflict);
 
@@ -80,6 +84,8 @@ export async function runPipeline(
       handoff: locked.handoff,
       phrasing: phrasing.view,
     },
+    intent: signals.intent.value,
+    orderId: facts.order?.id,
     engines: {
       decision: proposal ? proposal.engine : "rules",
       phrasing: deps.phraser?.name ?? "templates",

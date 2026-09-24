@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, type ComponentType, type FormEvent, type ReactNode } from "react";
 import { BookIcon, ChatIcon, FlowIcon, GearIcon, HumanIcon, PackageIcon, PlusIcon, SearchIcon, TestIcon } from "../icons";
+import type { Sender } from "@/lib/engine/types";
 import { ChatProvider, useChat } from "./ChatProvider";
 
 type IconType = ComponentType<{ size?: number }>;
@@ -17,9 +18,9 @@ const NAV: { href: string; label: string; icon: IconType }[] = [
   { href: "/settings", label: "Settings", icon: GearIcon },
 ];
 
-export function AppShell({ children }: { children: ReactNode }) {
+export function AppShell({ children, senders }: { children: ReactNode; senders: Sender[] }) {
   return (
-    <ChatProvider>
+    <ChatProvider senders={senders}>
       <Frame>{children}</Frame>
     </ChatProvider>
   );

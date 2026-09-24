@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useEffect } from "react";
-import { SENDERS } from "@/lib/data/customers";
 import { BotIcon, ChevronRightIcon, SparkIcon } from "../icons";
 import { useChat } from "../shell/ChatProvider";
 import { Composer } from "./Composer";
@@ -15,7 +14,7 @@ export function ChatHome() {
 }
 
 function Welcome() {
-  const { prefill } = useChat();
+  const { prefill, findSender } = useChat();
   return (
     <div className="mx-auto flex min-h-full w-full max-w-[720px] flex-col px-4 pb-6 sm:px-6">
       <div className="pt-6 text-center sm:pt-8">
@@ -38,7 +37,7 @@ function Welcome() {
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           {QUESTIONS.map((q) => {
-            const sender = SENDERS.find((s) => s.id === q.senderId)!;
+            const sender = findSender(q.senderId);
             const Icon = q.icon;
             return (
               <button
@@ -70,7 +69,7 @@ function Welcome() {
 }
 
 function Conversation() {
-  const { exchanges } = useChat();
+  const { exchanges, findSender } = useChat();
 
   useEffect(() => {
     // The composer is sticky at the bottom, so scroll the whole pane rather than an anchor behind it.
@@ -82,7 +81,7 @@ function Conversation() {
     <div className="mx-auto flex min-h-full w-full max-w-[760px] flex-col px-4 sm:px-6">
       <div className="flex-1 space-y-8 pt-4 pb-8">
         {exchanges.map((ex) => {
-          const sender = SENDERS.find((s) => s.id === ex.senderId)!;
+          const sender = findSender(ex.senderId);
           return (
             <div key={ex.id} className="space-y-5">
               <UserMessage text={ex.text} sender={sender} />

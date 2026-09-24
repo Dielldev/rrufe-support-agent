@@ -87,3 +87,59 @@ export function daysBetween(from: Date, to: Date): number {
 export function plural(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
 }
+
+// ---- calendar ----------------------------------------------------------------
+// The database stores dates as 'YYYY-MM-DD' and timestamps as 'YYYY-MM-DD HH:MM:SS'
+// (UTC). Day arithmetic runs on UTC midnights so a "day" is always 24h.
+
+const DAY_MS = 86_400_000;
+
+/** 'YYYY-MM-DD' → UTC midnight. */
+export function parseDay(iso: string): Date {
+  return new Date(`${iso.slice(0, 10)}T00:00:00Z`);
+}
+
+/** 'YYYY-MM-DD HH:MM:SS' (UTC) → Date. */
+export function parseTimestamp(ts: string): Date {
+  return new Date(`${ts.trim().replace(" ", "T")}${/[zZ]|[+-]\d\d:?\d\d$/.test(ts) ? "" : "Z"}`);
+}
+
+export function isoDay(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+export function sqlTimestamp(d: Date): string {
+  return d.toISOString().slice(0, 19).replace("T", " ");
+}
+
+/** The calendar day it is in `timeZone` at instant `now`, as a UTC midnight. */
+export function calendarDay(now: Date, timeZone: string): Date {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+  return parseDay(parts);
+}
+
+export function addDays(d: Date, days: number): Date {
+  return new Date(d.getTime() + days * DAY_MS);
+}
+
+/** Adds Monday–Friday days, the way the seed computes shipment windows. */
+export function addWorkingDays(d: Date, days: number): Date {
+  let out = d;
+  let left = days;
+  while (left > 0) {
+    out = addDays(out, 1);
+    const wd = out.getUTCDay();
+    if (wd !== 0 && wd !== 6) left -= 1;
+  }
+  return out;
+}
+
+const MONTHS: Record<Language, string[]> = {
+  en: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
+  sq: ["janar", "shkurt", "mars", "prill", "maj", "qershor", "korrik", "gusht", "shtator", "tetor", "nëntor", "dhjetor"],
+};
+
+/** "22 Sep" / "22 shtator". */
+export function formatDay(d: Date, lang: Language = "en"): string {
+  return `${d.getUTCDate()} ${MONTHS[lang][d.getUTCMonth()]}`;
+}

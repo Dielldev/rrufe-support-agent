@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { SENDERS } from "@/lib/data/customers";
 import { ArrowUpIcon, ChannelIcon, ChevronIcon, FlowIcon, MicIcon, SlidersIcon } from "../icons";
 import { useChat } from "../shell/ChatProvider";
 import { QUESTIONS } from "./questions";
@@ -10,10 +9,11 @@ import { QUESTIONS } from "./questions";
 const CHANNEL = { email: "Email", instagram: "Instagram", viber: "Viber" } as const;
 
 export function Composer() {
-  const { draft, setDraft, send, busy, senderId, setSenderId, mode, setMode, prefill, focusSignal } = useChat();
+  const { draft, setDraft, send, busy, senderId, setSenderId, mode, setMode, prefill, focusSignal, senders, findSender } = useChat();
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const sender = SENDERS.find((s) => s.id === senderId)!;
+  const sender = findSender(senderId);
+  const options = senders.some((s) => s.id === senderId) ? senders : [sender, ...senders];
   const canSend = draft.trim().length > 0 && !busy;
 
   useEffect(() => {
@@ -112,7 +112,7 @@ export function Composer() {
             onChange={(e) => setSenderId(e.target.value)}
             className="max-w-[260px] min-w-0 appearance-none truncate bg-transparent pr-5 font-medium text-ink focus:outline-none"
           >
-            {SENDERS.map((s) => (
+            {options.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.displayName} · {CHANNEL[s.channel]} {s.handle}
               </option>

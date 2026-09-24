@@ -27,7 +27,7 @@ export const QUESTIONS: Question[] = [
     id: "verified-buyer",
     title: "Verified buyer asks",
     text: "What's the address on order #1031?",
-    senderId: "arben",
+    senderId: "instagram:@arben.hoxha",
     icon: KeyIcon,
     tint: "bg-[#eaf7f0] text-[#22a06b]",
   },

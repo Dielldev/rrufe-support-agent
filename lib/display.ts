@@ -1,32 +1,39 @@
-import { CONTACT_LOG, SENDERS } from "@/lib/data/customers";
-import { allOrders } from "@/lib/data/orders";
-import { POLICY_CATALOG, UNCOVERED_TOPICS } from "@/lib/data/shop";
-import { ordersOfSender } from "@/lib/engine/facts";
-import { daysBetween } from "@/lib/engine/text";
+import { listConversations, listOrders, listSenders } from "@/lib/db/repo";
+import { SHOP_TIME_ZONE, shopNow } from "@/lib/shop/operations";
+import { calendarDay, daysBetween, isoDay } from "@/lib/engine/text";
 
-/** Plain, serializable view of the mock records for the "ground truth" panel. */
-export function shopRecords(now: Date) {
+/** Plain, serializable view of the database for the Orders page. */
+export async function shopRecords(now: Date = shopNow()) {
+  const today = calendarDay(now, SHOP_TIME_ZONE);
+  const [orders, senders, conversations] = await Promise.all([listOrders(), listSenders(), listConversations(today, 60)]);
   return {
-    orders: allOrders(now).map((o) => ({
+    today: isoDay(today),
+    orders: orders.map((o) => ({
       id: o.id,
       /** Inbox accounts the agent treats as this order's buyer. */
-      linked: SENDERS.filter((s) => ordersOfSender(s, now).some((x) => x.id === o.id)).map((s) => ({
-        channel: s.channel,
-        handle: s.handle,
-      })),
+      linked: senders.filter((s) => s.customerId === o.customerId).map((s) => ({ channel: s.channel, handle: s.handle })),
       buyer: o.buyer,
-      item: o.item.name,
+      items: o.items.map((i) => `${i.name}${i.qty > 1 ? ` ×${i.qty}` : ""}${i.opened ? " (opened)" : ""}`).join(", "),
+      total: o.items.reduce((sum, i) => sum + i.qty * i.price, 0),
       status: o.status,
-      placedDaysAgo: daysBetween(o.placedAt, now),
-      deliveredDaysAgo: o.deliveredAt ? daysBetween(o.deliveredAt, now) : undefined,
+      carrier: o.shipment?.carrier,
+      tracking: o.shipment?.tracking,
+      expectedBy: o.shipment ? isoDay(o.shipment.expectedMax) : undefined,
+      placedDaysAgo: daysBetween(o.placedAt, today),
+      deliveredDaysAgo: o.deliveredAt ? daysBetween(o.deliveredAt, today) : undefined,
     })),
-    policies: POLICY_CATALOG,
-    gaps: UNCOVERED_TOPICS.map((t) => t.label),
-    contactLog: Object.entries(CONTACT_LOG).map(([senderId, entries]) => ({
-      sender: SENDERS.find((s) => s.id === senderId)?.displayName ?? senderId,
-      entries,
+    conversations: conversations.map((c) => ({
+      id: c.convId,
+      who: c.customer ?? `${c.handle} (unknown)`,
+      channel: c.channel,
+      daysAgo: c.daysAgo,
+      message: c.summary,
+      sentiment: c.sentiment,
+      answered: c.answered,
+      action: c.action,
+      escalation: c.escalation,
     })),
   };
 }
 
-export type ShopRecords = ReturnType<typeof shopRecords>;
+export type ShopRecords = Awaited<ReturnType<typeof shopRecords>>;

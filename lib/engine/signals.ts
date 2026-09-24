@@ -1,5 +1,6 @@
-import { UNCOVERED_TOPICS } from "@/lib/data/shop";
+import { covers, type PolicyBook } from "@/lib/shop/policies";
 import { detectLanguage, normalize, rx } from "./text";
+import { TOPIC_DETECTORS } from "./topics";
 import type { Detection, Intent, PiiField, ProductCategory, Signals } from "./types";
 
 /*
@@ -17,12 +18,12 @@ const PHONE = /(?:\+|00)?383[\s.-]?\d{2}[\s.-]?\d{3}[\s.-]?\d{3}|(?<!\d)0\d{2}[\
 
 const PRODUCTS: { category: ProductCategory; re: RegExp }[] = [
   { category: "headphones", re: rx(String.raw`\b(headphones?|earbuds?|headset|airpods|kufje\w*|slusha\w*)\b`) },
-  { category: "laptop", re: rx(String.raw`\b(laptop\w*|notebook|macbook|kompjuter\w*)\b`) },
-  { category: "tablet", re: rx(String.raw`\b(tablet\w*|ipad)\b`) },
-  { category: "console", re: rx(String.raw`\b(playstation|ps5|xbox|console|konzol\w*)\b`) },
-  { category: "tv", re: rx(String.raw`\b(tv|televizor\w*|television|oled)\b`) },
-  { category: "speaker", re: rx(String.raw`\b(speaker|zgjues\w*|altoparlant\w*|jbl)\b`) },
-  { category: "phone", re: rx(String.raw`\b(smartphone|iphone|mobile phone|celular\w*|telefon(?:in|i)? (?:i ri|celular))\b`) },
+  { category: "laptop", re: rx(String.raw`\b(laptop\w*|notebook|macbook|ideapad|vivobook|pavilion|kompjuter\w*)\b`) },
+  { category: "charger", re: rx(String.raw`\b(charger\w*|charging (?:brick|adapter)|karikues\w*|ngarkues\w*|adapter\w*)\b`) },
+  {
+    category: "phone",
+    re: rx(String.raw`\b(smartphone|iphone|galaxy|redmi|xiaomi|mobile phone|celular\w*|telefon(?:in|i)? (?:i ri|celular)|my phone (?:is|won'?t|doesn'?t|stopped))\b`),
+  },
 ];
 
 const DAYS = rx(String.raw`\b(\d{1,3})\s*(days?|dit[eë]\w*)`, "gi");
@@ -212,18 +213,18 @@ function readPersonalData(
   return { hit: fields.length > 0, evidence, fields };
 }
 
-function readPolicyGap(text: string): Detection & { topicId?: string } {
-  for (const topic of UNCOVERED_TOPICS) {
+function readTopic(text: string): Detection & { topicId?: string } {
+  for (const topic of TOPIC_DETECTORS) {
     const m = text.match(topic.re);
-    if (m) {
-      return {
-        hit: true,
-        topicId: topic.id,
-        evidence: [`Mentions “${m[0]}” → ${topic.label} (no written policy)`],
-      };
-    }
+    if (m) return { hit: true, topicId: topic.id, evidence: [`Mentions “${m[0]}” → ${topic.label}`] };
   }
   return { hit: false, evidence: [] };
+}
+
+/** A detected topic is a policy gap when the policies table has no row for it. */
+function readPolicyGap(topic: Detection & { topicId?: string }, book: PolicyBook | undefined): Signals["policyGap"] {
+  if (!topic.hit || !topic.topicId || !book || covers(book, topic.topicId)) return { hit: false, evidence: [] };
+  return { hit: true, topicId: topic.topicId, evidence: [`${topic.evidence[0]} (no written policy)`] };
 }
 
 function readStatedDays(text: string): number | undefined {
@@ -240,8 +241,8 @@ function readIntent(
 ): { value: Intent; evidence: string[] } {
   const missing = matches(MISSING_RX, text);
   if (s.personalData.hit) return { value: "personal_data_request", evidence: s.personalData.evidence };
-  if (s.policyGap.hit) {
-    return { value: s.policyGap.topicId === "installments" ? "financing" : "other", evidence: s.policyGap.evidence };
+  if (s.topic.hit) {
+    return { value: s.topic.topicId === "installments" ? "financing" : "other", evidence: s.topic.evidence };
   }
   const checks: [Intent, RegExp][] = [
     ["return_request", RETURN_RX],
@@ -279,8 +280,9 @@ function lastOrderIdIn(texts: string[]): string | undefined {
 /**
  * @param priorTexts earlier messages from the same sender in this conversation,
  *   so a third-party claim made once keeps applying to the whole thread.
+ * @param book the policy book from the database; a detected topic without a row is a policy gap.
  */
-export function extractSignals(rawText: string, priorTexts: string[] = []): Signals {
+export function extractSignals(rawText: string, priorTexts: string[] = [], book?: PolicyBook): Signals {
   const text = normalize(rawText);
   const orderIds = uniq([
     ...[...text.matchAll(ORDER_HASH)].map((m) => m[1]),
@@ -306,6 +308,7 @@ export function extractSignals(rawText: string, priorTexts: string[] = []): Sign
   }
 
   const boxOpened = SEALED.test(text) ? false : OPENED.test(text) ? true : null;
+  const topic = readTopic(text);
 
   const base = {
     orderIds,
@@ -318,7 +321,8 @@ export function extractSignals(rawText: string, priorTexts: string[] = []): Sign
     repeat: readRepeat(text),
     thirdParty,
     personalData: readPersonalData(text, orderIds.length > 0, thirdParty.hit),
-    policyGap: readPolicyGap(text),
+    topic,
+    policyGap: readPolicyGap(topic, book),
     contextOrderId: orderIds.length ? undefined : lastOrderIdIn(priorTexts),
     reportsMissing: MISSING_RX.test(text),
     smallTalk: readSmallTalk(text),
