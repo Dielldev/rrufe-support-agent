@@ -248,9 +248,17 @@ export async function phraseReply(
   language: Language,
   customerText: string,
   phraser: Phraser | null,
+  allowFallback: boolean = false,
 ): Promise<{ text: string; view: PhrasingView }> {
   const draft = renderDraft(brief, language);
-  if (!phraser) return { text: draft, view: { engine: "template", issues: [] } };
+  if (!phraser) {
+    if (!allowFallback) {
+      throw new Error(
+        "AI phrasing model is required: No API key configured (set GROQ_API_KEY or AI_GATEWAY_API_KEY). Template fallback is disabled in settings.",
+      );
+    }
+    return { text: draft, view: { engine: "template", issues: [] } };
+  }
 
   const started = performance.now();
   try {
@@ -258,10 +266,19 @@ export async function phraseReply(
     const latencyMs = Math.round(performance.now() - started);
     const issues = validateReply(output, brief, draft, language);
     if (issues.length) {
+      if (!allowFallback) {
+        throw new Error(
+          `AI phrasing failed validation checks: ${issues.map((i) => i.detail).join("; ")}. Template fallback is disabled in settings.`,
+        );
+      }
       return { text: draft, view: { engine: "template", phraser: phraser.name, rejectedDraft: output, issues, latencyMs } };
     }
     return { text: output, view: { engine: "model", phraser: phraser.name, issues: [], latencyMs } };
   } catch (err) {
+    if (!allowFallback) {
+      const detail = safeModelError(err, "AI phrasing model failed");
+      throw new Error(`${detail}. Template fallback is disabled in settings.`);
+    }
     return {
       text: draft,
       view: {

@@ -15,15 +15,18 @@ export interface PipelineDeps {
   /** Proposes a decision (Jev, Groq or the stress simulator). `null` = rules only. */
   proposer: Proposer | null;
   phraser: Phraser | null;
+  /** Whether to fall back to template drafts when no phrasing model is configured or when phrasing fails. */
+  allowFallback?: boolean;
 }
 
-export function depsForMode(mode: RunMode): PipelineDeps {
-  if (mode === "stress") return { proposer: overconfidentProposer, phraser: roguePhraser };
+export function depsForMode(mode: RunMode, allowFallback: boolean = false): PipelineDeps {
+  if (mode === "stress") return { proposer: overconfidentProposer, phraser: roguePhraser, allowFallback: true };
   const decision = decisionProvider();
   const phrasing = phrasingProvider();
   return {
     proposer: decision === "jev" ? jevProposer() : decision === "groq" ? groqProposer() : null,
     phraser: phrasing === "gateway" ? gatewayPhraser() : phrasing === "groq" ? groqPhraser() : null,
+    allowFallback,
   };
 }
 
@@ -54,7 +57,7 @@ export async function runPipeline(
   const rules = decide(signals, facts, sender);
   const locked = guard(rules, proposal, conflict);
 
-  const phrasing = await phraseReply(locked.brief, signals.language, text, deps.phraser);
+  const phrasing = await phraseReply(locked.brief, signals.language, text, deps.phraser, deps.allowFallback ?? false);
 
   return {
     id: crypto.randomUUID(),

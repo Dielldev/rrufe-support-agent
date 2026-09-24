@@ -1,5 +1,7 @@
+import { cookies } from "next/headers";
 import { recordTriage, resolveSender } from "@/lib/db/repo";
 import { clientKey, rateLimit } from "@/lib/rate-limit";
+import { fallbackEnabled } from "@/lib/engine/config";
 import { depsForMode, runPipeline } from "@/lib/engine/pipeline";
 import { DECISIONS, type Decision, type RunMode, type ThreadMessage } from "@/lib/engine/types";
 import { shopNow } from "@/lib/shop/operations";
@@ -68,7 +70,15 @@ export async function POST(request: Request) {
 
     const mode = parsed.mode ?? "standard";
     const now = shopNow();
-    const result = await runPipeline({ text: parsed.text, sender, thread: parsed.thread ?? [] }, { ...depsForMode(mode), now });
+
+    const jar = await cookies();
+    const fallbackCookie = jar.get("rrufe_allow_fallback")?.value;
+    const allowFallback = fallbackEnabled(fallbackCookie);
+
+    const result = await runPipeline(
+      { text: parsed.text, sender, thread: parsed.thread ?? [] },
+      { ...depsForMode(mode, allowFallback), now, allowFallback },
+    );
 
     // Real conversations go into the audit trail. Stress runs and test-suite runs don't.
     if (mode === "standard" && parsed.record && process.env.DB_RECORD_DECISIONS !== "0") {
@@ -82,6 +92,7 @@ export async function POST(request: Request) {
     return Response.json(result);
   } catch (err) {
     console.error("[triage] pipeline failed", err);
-    return Response.json({ error: "The shop database is unavailable. Check DATABASE_URL and try again." }, { status: 503 });
+    const message = err instanceof Error ? err.message : "The shop database or triage service is unavailable.";
+    return Response.json({ error: message }, { status: 500 });
   }
 }

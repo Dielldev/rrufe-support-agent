@@ -4,7 +4,7 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { ensureSeeded, setDatabase } from "@/lib/db/client";
 import { contactLog, findOrder, recordTriage, resolveSender } from "@/lib/db/repo";
 import { roguePhraser, validateReply } from "@/lib/engine/phrasing";
-import { decisionProvider, phrasingProvider } from "@/lib/engine/config";
+import { decisionProvider, fallbackEnabled, phrasingProvider } from "@/lib/engine/config";
 import { proposeWithLanguageModel } from "@/lib/engine/groq";
 import { jevProposer } from "@/lib/engine/jev";
 import { depsForMode, runPipeline, type PipelineDeps } from "@/lib/engine/pipeline";
@@ -17,7 +17,7 @@ import { SCENARIOS } from "@/lib/scenarios";
  * The seed is written for 2026-09-24, so "now" is pinned to that morning.
  */
 const NOW = new Date("2026-09-24T10:00:00Z");
-const RULES_ONLY: PipelineDeps = { now: NOW, proposer: null, phraser: null };
+const RULES_ONLY: PipelineDeps = { now: NOW, proposer: null, phraser: null, allowFallback: true };
 
 /** Seed senders (channel:handle). */
 const DRITA = "viber:+38344100101"; // #1026, #1048 (late)
@@ -71,6 +71,7 @@ const withJev = (answers: Answers): PipelineDeps => ({
   now: NOW,
   proposer: jevProposer(new MockEvaluationModel({ doEvaluate: async () => ({ answers, warnings: [] }) }), "jev-mock"),
   phraser: null,
+  allowFallback: true,
 });
 
 describe("the five challenge messages — rules only, facts from the seed DB", () => {
@@ -148,7 +149,7 @@ describe("Jev / Groq integration (mock models)", () => {
         warnings: [],
       }),
     });
-    const r = await run(SCENARIOS[4].text, ARDIT, { now: NOW, proposer: (st) => proposeWithLanguageModel(model, st, "groq/mock", "Groq"), phraser: null });
+    const r = await run(SCENARIOS[4].text, ARDIT, { now: NOW, proposer: (st) => proposeWithLanguageModel(model, st, "groq/mock", "Groq"), phraser: null, allowFallback: true });
     expect(r.why.guard.outcome).toBe("model_unavailable");
     expect(r.decision).toBe("escalate");
   });
@@ -240,5 +241,20 @@ describe("engine selection", () => {
     expect(phrasingProvider()).toBe("groq");
     process.env.AI_GATEWAY_API_KEY = "test";
     expect(decisionProvider()).toBe("jev");
+  });
+
+  it("disables template fallback by default, requiring AI phrasing", () => {
+    delete process.env.ALLOW_TEMPLATE_FALLBACK;
+    expect(fallbackEnabled()).toBe(false);
+    expect(fallbackEnabled("1")).toBe(true);
+    expect(fallbackEnabled("0")).toBe(false);
+    process.env.ALLOW_TEMPLATE_FALLBACK = "1";
+    expect(fallbackEnabled()).toBe(true);
+  });
+
+  it("fails triage with missing AI error when fallback is disabled and no phraser is provided", async () => {
+    await expect(run("Where is order #1048?", DRITA, { now: NOW, proposer: null, phraser: null, allowFallback: false })).rejects.toThrow(
+      "AI phrasing model is required",
+    );
   });
 });

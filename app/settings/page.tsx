@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import { connection } from "next/server";
 import { PageHeader } from "@/components/console/ui";
 import { databaseConfig } from "@/lib/db/client";
@@ -6,7 +7,7 @@ import { tableCounts } from "@/lib/db/repo";
 import { engineStatus } from "@/lib/engine/config";
 import { DECISION_CONFIDENCE_FLOOR, FLAG_THRESHOLD, INTENT_ADOPT_THRESHOLD, LLM_FLAG_THRESHOLD } from "@/lib/engine/guard";
 import { OPS } from "@/lib/shop/operations";
-import { resetAllowed, resetDemoData } from "./actions";
+import { resetAllowed, resetDemoData, setFallbackMode } from "./actions";
 
 const DB_KIND = {
   remote: "Hosted (Turso / libSQL)",
@@ -44,7 +45,9 @@ function Row({ label, value, live, hint }: { label: string; value: string; live?
 
 export default async function SettingsPage() {
   await connection();
-  const status = engineStatus();
+  const jar = await cookies();
+  const fallbackCookie = jar.get("rrufe_allow_fallback")?.value;
+  const status = engineStatus(fallbackCookie);
   const { kind } = databaseConfig();
   const [counts, canReset] = await Promise.all([tableCounts().catch(() => null), resetAllowed()]);
   return (
@@ -68,8 +71,44 @@ export default async function SettingsPage() {
           label="Phrasing"
           value={status.phrasing.label}
           live={status.phrasing.live}
-          hint="Runs only after the decision is locked. Any draft that fails validation is replaced by the approved template."
+          hint="Runs only after the decision is locked. When fallback is disabled, a live AI phrasing model is strictly required."
         />
+        <Row
+          label="Template fallback (Regex)"
+          value={status.fallbackAllowed ? "Enabled (Regex fallback)" : "Disabled (Pure AI required)"}
+          live={!status.fallbackAllowed}
+          hint={
+            status.fallbackAllowed
+              ? "When no AI key is configured or model calls fail, template replies are sent as a fallback."
+              : "Disabled. When no AI key is configured or phrasing fails, template drafts are blocked so you can test real AI model responses purely."
+          }
+        />
+      </div>
+
+      <div className="mt-3 flex items-center justify-between gap-4 rounded-xl bg-sunken px-4 py-3 text-[13px] text-ink-2">
+        <div>
+          <span className="font-medium text-ink">
+            {status.fallbackAllowed ? "Template Fallback is active" : "Pure AI Mode is active (Fallback disabled)"}
+          </span>
+          <p className="mt-0.5 text-xs text-muted">
+            {status.fallbackAllowed
+              ? "Messages will fall back to hardcoded regex templates if AI keys are missing."
+              : "Template replies are blocked. The agent strictly requires a live AI phrasing model."}
+          </p>
+        </div>
+        <form
+          action={async () => {
+            "use server";
+            await setFallbackMode(!status.fallbackAllowed);
+          }}
+        >
+          <button
+            type="submit"
+            className="shrink-0 rounded-lg border border-line-strong bg-surface px-3 py-1.5 font-medium text-ink shadow-[0_1px_2px_rgba(16,24,40,0.04)] hover:bg-hover cursor-pointer"
+          >
+            {status.fallbackAllowed ? "Disable Fallback (Pure AI)" : "Enable Fallback"}
+          </button>
+        </form>
       </div>
 
       {!status.gateway && (

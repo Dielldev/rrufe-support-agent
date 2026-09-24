@@ -8,6 +8,7 @@ export type PhrasingProvider = "gateway" | "groq" | "templates";
 export interface EngineStatus {
   gateway: boolean;
   groq: boolean;
+  fallbackAllowed: boolean;
   decision: { live: boolean; provider: DecisionProvider; label: string };
   phrasing: { live: boolean; provider: PhrasingProvider; label: string };
 }
@@ -20,6 +21,22 @@ export interface EngineStatus {
 export function gatewayConfigured(): boolean {
   if (process.env.AI_GATEWAY_API_KEY) return true;
   return process.env.USE_AI_GATEWAY === "1" && Boolean(process.env.VERCEL_OIDC_TOKEN);
+}
+
+/**
+ * Fallback mode determines whether pre-approved regex/template drafts are
+ * returned when no phrasing model is configured or when model calls fail.
+ * Default is FALSE (disabled) so tests and live chats evaluate pure AI responses.
+ */
+export function fallbackEnabled(override?: boolean | string | null): boolean {
+  if (override !== undefined && override !== null) {
+    if (typeof override === "boolean") return override;
+    return override === "1" || override === "true";
+  }
+  if (process.env.ALLOW_TEMPLATE_FALLBACK !== undefined) {
+    return process.env.ALLOW_TEMPLATE_FALLBACK === "1" || process.env.ALLOW_TEMPLATE_FALLBACK === "true";
+  }
+  return false;
 }
 
 /**
@@ -39,12 +56,14 @@ export function phrasingProvider(): PhrasingProvider {
   return "templates";
 }
 
-export function engineStatus(): EngineStatus {
+export function engineStatus(fallbackOverride?: boolean | string | null): EngineStatus {
   const decision = decisionProvider();
   const phrasing = phrasingProvider();
+  const fallback = fallbackEnabled(fallbackOverride);
   return {
     gateway: gatewayConfigured(),
     groq: groqConfigured(),
+    fallbackAllowed: fallback,
     decision: {
       live: decision !== "rules",
       provider: decision,
@@ -59,7 +78,9 @@ export function engineStatus(): EngineStatus {
           ? process.env.PHRASING_MODEL || DEFAULT_PHRASING_MODEL
           : phrasing === "groq"
             ? `Groq (${groqPhrasingModelId()})`
-            : "Approved templates",
+            : fallback
+              ? "Approved templates (Fallback enabled)"
+              : "Disabled (Pure AI required)",
     },
   };
 }
