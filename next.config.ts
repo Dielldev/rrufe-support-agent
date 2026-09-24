@@ -14,6 +14,12 @@ const nextConfig: NextConfig = {
   // Keep the dev-mode route badge from sitting on top of the sidebar.
   devIndicators: false,
   poweredByHeader: false,
+  serverExternalPackages: ["@libsql/client", "libsql"],
+  // db/schema.sql + db/seed.sql are read at runtime to create an empty database.
+  outputFileTracingIncludes: {
+    "/**/*": ["./db/schema.sql", "./db/seed.sql"],
+    "/": ["./db/schema.sql", "./db/seed.sql"],
+  },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

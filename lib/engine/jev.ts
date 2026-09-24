@@ -1,6 +1,7 @@
 import { experimental_evaluate as evaluate, type Experimental_EvaluationModel as EvaluationModel } from "ai";
 import { safeModelError } from "./errors";
 import type { FactSheet } from "./facts";
+import { OPS } from "@/lib/shop/operations";
 import { daysBetween } from "./text";
 import { DECISIONS, INTENTS, type Decision, type Intent, type ProposalView, type Sender } from "./types";
 
@@ -26,7 +27,7 @@ const INTENT_CRITERIA: Record<Intent, string> = {
   personal_data_request: "Wants the shop to reveal or confirm the address, phone number or email on an order",
   store_info: "Store location, opening hours or how to reach the shop",
   delivery_info: "General delivery costs, areas or times — not about a specific placed order",
-  payment_methods: "Which up-front payment methods are accepted (card, cash on delivery, bank transfer)",
+  payment_methods: "How the customer can pay up front (for example card, cash on delivery or bank transfer)",
   financing: "Paying in installments, monthly payments, credit, leasing or other financing",
   small_talk: "Greetings, thanks, pleasantries or asking what the assistant can do — no concrete request yet",
   other: "Anything else",
@@ -72,32 +73,34 @@ export const JEV_QUESTIONS = {
   },
 } as const;
 
-const POLICY_SUMMARY = {
-  delivery: "2–4 days across Kosovo. Later than 4 days: agent opens a carrier trace. Later than 10 days: staff decide.",
-  returns: "Within 30 days of delivery, unopened items with factory seal only.",
-  warranty: "24 months on all electronics.",
-  privacy: "Address, phone and email are shared only with the verified buyer.",
-  payments: "Card, cash on delivery, bank transfer. No written policy on installments or financing.",
-  escalation: "Upset or repeat customers, and anything the policy doesn't cover, go to a human.",
-};
+const ESCALATION_POLICY =
+  "Upset or repeat customers, and any topic without a written policy, go to a human. The agent only states what the written policy says.";
 
-/** State sent to Jev. Deliberately contains no names, addresses, phones or emails. */
+/**
+ * State sent to Jev (and Groq). Deliberately contains no names, addresses, phones
+ * or emails. The policy is the shop's policies table, verbatim.
+ */
 export function buildJevState(text: string, sender: Sender, sheet: FactSheet) {
   const o = sheet.order;
   return {
-    shop: "Rrufe Electronics — electronics shop in Kosovo",
+    shop: `${OPS.shopName} — electronics shop in Kosovo`,
     channel: sender.channel,
     customer_message: text,
     verified_facts: {
       order_referenced: sheet.requestedOrderId ?? null,
       order_found: Boolean(o),
       order_status: o?.status ?? null,
-      days_since_order: o ? daysBetween(o.placedAt, sheet.now) : null,
-      days_since_delivery: o?.deliveredAt ? daysBetween(o.deliveredAt, sheet.now) : null,
+      courier_status: o?.shipment?.tracking ?? null,
+      days_since_order: o ? daysBetween(o.placedAt, sheet.today) : null,
+      days_past_expected_delivery: o?.shipment && !o.deliveredAt ? Math.max(0, daysBetween(o.shipment.expectedMax, sheet.today)) : null,
+      days_since_delivery: o?.deliveredAt ? daysBetween(o.deliveredAt, sheet.today) : null,
       requester_is_verified_buyer: sheet.identity?.verified ?? false,
-      earlier_unanswered_contacts_14_days: sheet.history.unanswered14d,
+      earlier_unanswered_contacts: sheet.history.unanswered,
     },
-    policy: POLICY_SUMMARY,
+    policy: {
+      ...Object.fromEntries(sheet.policies.rows.map((r) => [r.topic, r.text])),
+      escalation: ESCALATION_POLICY,
+    },
   };
 }
 

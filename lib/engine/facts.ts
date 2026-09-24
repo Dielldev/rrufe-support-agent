@@ -1,16 +1,17 @@
-import { contactLogFor, type ContactLogEntry } from "@/lib/data/customers";
-import { allOrders, findOrder, type Order } from "@/lib/data/orders";
-import { normEmail, normPhone } from "./text";
+import { contactLog, findOrder, handleMatchesBuyer, ordersOfCustomer, type ContactLogEntry, type Order } from "@/lib/db/repo";
+import type { PolicyBook } from "@/lib/shop/policies";
+import { SHOP_TIME_ZONE } from "@/lib/shop/operations";
+import { calendarDay, normEmail, normPhone } from "./text";
 import type { Sender, Signals, ThreadMessage } from "./types";
 
 /*
- * Facts come from code and mock records only. The customer's own claims are
- * kept separately and never override a record.
+ * Facts come from the shop database only. The customer's own claims are kept
+ * separately and never override a record.
  */
 
 export interface IdentityCheck {
   verified: boolean;
-  method?: "linked_account" | "channel_phone" | "channel_email" | "stated_email_and_phone";
+  method?: "linked_account" | "channel_phone" | "channel_email" | "channel_instagram" | "stated_email_and_phone";
   channelMatch: boolean;
   statedEmailMatch: boolean;
   statedPhoneMatch: boolean;
@@ -20,7 +21,11 @@ export interface IdentityCheck {
 export type OrderMatch = "by_id" | "from_thread" | "by_sender_product" | "by_sender_recent" | "id_not_found" | "none";
 
 export interface FactSheet {
+  /** The instant the message is handled. */
   now: Date;
+  /** Today's date in the shop's time zone, as a UTC midnight (all day arithmetic uses this). */
+  today: Date;
+  policies: PolicyBook;
   order?: Order;
   orderMatch: OrderMatch;
   requestedOrderId?: string;
@@ -28,26 +33,19 @@ export interface FactSheet {
   identity?: IdentityCheck;
   history: {
     log: ContactLogEntry[];
-    unanswered14d: number;
+    unanswered: number;
     sessionUnresolved: number;
   };
 }
 
-export function ordersOfSender(sender: Sender, now: Date): Order[] {
-  return allOrders(now).filter(
-    (o) =>
-      (sender.customerId && o.customerId === sender.customerId) ||
-      (sender.email && normEmail(o.buyer.email) === normEmail(sender.email)) ||
-      (sender.phone && normPhone(o.buyer.phone) === normPhone(sender.phone)),
-  );
-}
-
 export function checkIdentity(order: Order, sender: Sender, signals: Signals): IdentityCheck {
   const linked = Boolean(sender.customerId && sender.customerId === order.customerId);
-  const channelPhone = Boolean(sender.phone && normPhone(sender.phone) === normPhone(order.buyer.phone));
-  const channelEmail = Boolean(sender.email && normEmail(sender.email) === normEmail(order.buyer.email));
-  const statedEmailMatch = signals.statedEmails.some((e) => normEmail(e) === normEmail(order.buyer.email));
-  const statedPhoneMatch = signals.statedPhones.some((p) => normPhone(p) === normPhone(order.buyer.phone));
+  const buyer = order.buyer;
+  const channelPhone = Boolean(sender.phone && buyer.phone && normPhone(sender.phone) === normPhone(buyer.phone));
+  const channelEmail = Boolean(sender.email && buyer.email && normEmail(sender.email) === normEmail(buyer.email));
+  const channelInstagram = sender.channel === "instagram" && handleMatchesBuyer(order, sender);
+  const statedEmailMatch = Boolean(buyer.email && signals.statedEmails.some((e) => normEmail(e) === normEmail(buyer.email!)));
+  const statedPhoneMatch = Boolean(buyer.phone && signals.statedPhones.some((p) => normPhone(p) === normPhone(buyer.phone!)));
   const thirdParty = signals.thirdParty.hit;
 
   // Someone who says they are writing for another person is never the buyer,
@@ -57,12 +55,13 @@ export function checkIdentity(order: Order, sender: Sender, signals: Signals): I
     if (linked) method = "linked_account";
     else if (channelPhone) method = "channel_phone";
     else if (channelEmail) method = "channel_email";
+    else if (channelInstagram) method = "channel_instagram";
     else if (statedEmailMatch && statedPhoneMatch) method = "stated_email_and_phone";
   }
   return {
     verified: method !== undefined,
     method,
-    channelMatch: linked || channelPhone || channelEmail,
+    channelMatch: linked || channelPhone || channelEmail || channelInstagram,
     statedEmailMatch,
     statedPhoneMatch,
     thirdParty,
@@ -70,25 +69,31 @@ export function checkIdentity(order: Order, sender: Sender, signals: Signals): I
 }
 
 function mostRecent(orders: Order[]): Order | undefined {
-  return [...orders].sort((a, b) => b.placedAt.getTime() - a.placedAt.getTime())[0];
+  return [...orders].sort((a, b) => b.placedAt.getTime() - a.placedAt.getTime() || Number(b.id) - Number(a.id))[0];
 }
 
-export function gatherFacts(
+export async function gatherFacts(
   signals: Signals,
   sender: Sender,
   thread: ThreadMessage[],
   now: Date,
-): FactSheet {
-  const senderOrders = ordersOfSender(sender, now);
+  policies: PolicyBook,
+): Promise<FactSheet> {
+  const today = calendarDay(now, SHOP_TIME_ZONE);
+  const requestedOrderId = signals.orderIds[0] ?? signals.contextOrderId;
+  const [senderOrders, log, requested] = await Promise.all([
+    sender.customerId ? ordersOfCustomer(sender.customerId) : Promise.resolve([]),
+    contactLog(sender, now, today),
+    requestedOrderId ? findOrder(requestedOrderId) : Promise.resolve(undefined),
+  ]);
+
   let order: Order | undefined;
   let orderMatch: OrderMatch = "none";
-  const requestedOrderId = signals.orderIds[0] ?? signals.contextOrderId;
-
   if (requestedOrderId) {
-    order = findOrder(requestedOrderId, now);
+    order = requested;
     orderMatch = order ? (signals.orderIds[0] ? "by_id" : "from_thread") : "id_not_found";
   } else if (signals.product) {
-    order = mostRecent(senderOrders.filter((o) => o.item.category === signals.product));
+    order = mostRecent(senderOrders.filter((o) => o.items.some((i) => i.category === signals.product)));
     if (order) orderMatch = "by_sender_product";
   }
   if (!order && orderMatch === "none") {
@@ -96,19 +101,24 @@ export function gatherFacts(
     if (order) orderMatch = "by_sender_recent";
   }
 
-  const log = contactLogFor(sender.id);
-  const unanswered14d = log.filter((e) => !e.answered && e.daysAgo <= 14).length;
   const sessionUnresolved = thread.filter(
     (m) => m.senderId === sender.id && m.decision !== undefined && m.decision !== "resolve",
   ).length;
 
   return {
     now,
+    today,
+    policies,
     order,
     orderMatch,
     requestedOrderId,
     senderOrders,
     identity: order ? checkIdentity(order, sender, signals) : undefined,
-    history: { log, unanswered14d, sessionUnresolved },
+    history: { log, unanswered: log.filter((e) => !e.answered).length, sessionUnresolved },
   };
+}
+
+/** The line item a message is about: the product mentioned, else the first item. */
+export function focusItem(order: Order, product?: string) {
+  return order.items.find((i) => i.category === product) ?? order.items[0];
 }

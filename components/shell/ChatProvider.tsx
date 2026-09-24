@@ -1,7 +1,10 @@
 "use client";
 
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
-import type { RunMode, ThreadMessage, TriageResult } from "@/lib/engine/types";
+import type { RunMode, Sender, ThreadMessage, TriageResult } from "@/lib/engine/types";
+import type { CustomerPersona } from "@/lib/db/repo";
+import { setActiveCustomer as setCookieCustomer } from "@/app/actions/user";
+import { SCENARIOS } from "@/lib/scenarios";
 
 export interface Exchange {
   id: string;
@@ -13,6 +16,15 @@ export interface Exchange {
 }
 
 interface ChatContextValue {
+  /** Inbox identities from the customers table (plus unknown senders seen before). */
+  senders: Sender[];
+  findSender: (id: string) => Sender;
+  personas: CustomerPersona[];
+  activeCustomerId: string | null;
+  activeCustomer: CustomerPersona | undefined;
+  isUserPickerOpen: boolean;
+  setIsUserPickerOpen: (open: boolean) => void;
+  selectCustomer: (id: string | null) => Promise<void>;
   exchanges: Exchange[];
   busy: boolean;
   draft: string;
@@ -31,22 +43,63 @@ interface ChatContextValue {
 
 const ChatContext = createContext<ChatContextValue | null>(null);
 
-export async function triage(text: string, senderId: string, mode: RunMode, thread: ThreadMessage[] = []) {
+/** A sender the picker doesn't know yet (e.g. a scenario sender before the list loads). */
+export function fallbackSender(id: string): Sender {
+  const sep = id.indexOf(":");
+  const channel = (sep > 0 ? id.slice(0, sep) : "instagram") as Sender["channel"];
+  const handle = sep > 0 ? id.slice(sep + 1) : id;
+  return { id, channel, handle, displayName: handle };
+}
+
+/**
+ * @param record write the message and decision to the database. The chat does;
+ *   the Tests page doesn't, so running the suite never changes the data it checks.
+ */
+export async function triage(text: string, senderId: string, mode: RunMode, thread: ThreadMessage[] = [], record = true) {
   const res = await fetch("/api/triage", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text, senderId, mode, thread }),
+    body: JSON.stringify({ text, senderId, mode, thread, record }),
   });
   const body = await res.json();
   if (!res.ok) throw new Error(body.error ?? `Request failed (${res.status})`);
   return body as TriageResult;
 }
 
-export function ChatProvider({ children }: { children: ReactNode }) {
+export function ChatProvider({
+  children,
+  senders,
+  personas = [],
+  initialCustomerId = null,
+}: {
+  children: ReactNode;
+  senders: Sender[];
+  personas?: CustomerPersona[];
+  initialCustomerId?: string | null;
+}) {
+  const [activeCustomerId, setActiveCustomerIdState] = useState<string | null>(initialCustomerId);
+  // Show modal if user has never selected a customer account yet
+  const [isUserPickerOpen, setIsUserPickerOpen] = useState(!initialCustomerId);
+
+  const activeCustomer = useMemo(
+    () => (activeCustomerId ? personas.find((p) => p.id === activeCustomerId) : undefined),
+    [personas, activeCustomerId],
+  );
+
+  const findPrimarySender = useCallback(
+    (customerId: string | null) => {
+      if (!customerId || customerId === "all") return SCENARIOS[0].senderId;
+      const s = senders.find((s) => s.customerId === customerId);
+      return s ? s.id : SCENARIOS[0].senderId;
+    },
+    [senders],
+  );
+
   const [exchanges, setExchanges] = useState<Exchange[]>([]);
   const [busy, setBusy] = useState(false);
   const [draft, setDraft] = useState("");
-  const [senderId, setSenderId] = useState("blerta");
+  const [senderId, setSenderId] = useState(() => findPrimarySender(initialCustomerId));
+  const findSender = useCallback((id: string) => senders.find((s) => s.id === id) ?? fallbackSender(id), [senders]);
   const [mode, setMode] = useState<RunMode>("standard");
   const [focusSignal, setFocusSignal] = useState(0);
   const history = useRef<Exchange[]>([]);
@@ -61,6 +114,24 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     setSenderId(sender);
     setFocusSignal((n) => n + 1);
   }, []);
+
+  const reset = useCallback(() => {
+    commit([]);
+    setDraft("");
+    setFocusSignal((n) => n + 1);
+  }, []);
+
+  const selectCustomer = useCallback(
+    async (customerId: string | null) => {
+      setActiveCustomerIdState(customerId);
+      const nextSender = findPrimarySender(customerId);
+      setSenderId(nextSender);
+      reset();
+      setIsUserPickerOpen(false);
+      await setCookieCustomer(customerId);
+    },
+    [findPrimarySender, reset],
+  );
 
   const send = useCallback(async () => {
     const text = draft.trim();
@@ -83,15 +154,48 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     setFocusSignal((n) => n + 1);
   }, [draft, busy, senderId, mode]);
 
-  const reset = useCallback(() => {
-    commit([]);
-    setDraft("");
-    setFocusSignal((n) => n + 1);
-  }, []);
-
   const value = useMemo(
-    () => ({ exchanges, busy, draft, setDraft, senderId, setSenderId, mode, setMode, prefill, focusSignal, send, reset }),
-    [exchanges, busy, draft, senderId, mode, prefill, focusSignal, send, reset],
+    () => ({
+      senders,
+      findSender,
+      personas,
+      activeCustomerId,
+      activeCustomer,
+      isUserPickerOpen,
+      setIsUserPickerOpen,
+      selectCustomer,
+      exchanges,
+      busy,
+      draft,
+      setDraft,
+      senderId,
+      setSenderId,
+      mode,
+      setMode,
+      prefill,
+      focusSignal,
+      send,
+      reset,
+    }),
+    [
+      senders,
+      findSender,
+      personas,
+      activeCustomerId,
+      activeCustomer,
+      isUserPickerOpen,
+      setIsUserPickerOpen,
+      selectCustomer,
+      exchanges,
+      busy,
+      draft,
+      senderId,
+      mode,
+      prefill,
+      focusSignal,
+      send,
+      reset,
+    ],
   );
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
 }

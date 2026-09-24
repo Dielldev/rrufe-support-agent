@@ -1,4 +1,4 @@
-import { POLICY } from "@/lib/data/shop";
+import { OPS } from "@/lib/shop/operations";
 import type { RulesOutcome } from "./rules";
 import {
   STRICTNESS,
@@ -126,7 +126,7 @@ export function mergeSignals(rules: Signals, proposal: ProposalView | null): Mer
 
 function genericBrief(decision: Decision, base: ReplyBrief, outcome: string): ReplyBrief {
   if (decision === "escalate") {
-    return { ...base, kind: "escalate_review", decision, outcome, params: { slaHours: POLICY.escalation.standardSlaHours }, disclose: [] };
+    return { ...base, kind: "escalate_review", decision, outcome, params: { slaHours: OPS.standardSlaHours }, disclose: [] };
   }
   return { ...base, kind: "verify_generic", decision, outcome, params: {}, disclose: [] };
 }
@@ -176,7 +176,7 @@ export function guard(rules: RulesOutcome, proposal: ProposalView | null, confli
       brief,
       handoff:
         final === "escalate"
-          ? rules.handoff ?? { priority: "normal", queue: "Support team", slaHours: POLICY.escalation.standardSlaHours, note: handoffNote }
+          ? rules.handoff ?? { priority: "normal", queue: "Support team", slaHours: OPS.standardSlaHours, note: handoffNote }
           : rules.handoff,
       summarySuffix: final === rules.decision ? undefined : note,
     };

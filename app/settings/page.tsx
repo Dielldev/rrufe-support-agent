@@ -1,7 +1,29 @@
 import type { Metadata } from "next";
+import { connection } from "next/server";
 import { PageHeader } from "@/components/console/ui";
+import { databaseConfig } from "@/lib/db/client";
+import { tableCounts } from "@/lib/db/repo";
 import { engineStatus } from "@/lib/engine/config";
 import { DECISION_CONFIDENCE_FLOOR, FLAG_THRESHOLD, INTENT_ADOPT_THRESHOLD, LLM_FLAG_THRESHOLD } from "@/lib/engine/guard";
+import { OPS } from "@/lib/shop/operations";
+import { resetAllowed, resetDemoData } from "./actions";
+
+const DB_KIND = {
+  remote: "Hosted (Turso / libSQL)",
+  file: "Local SQLite file",
+  memory: "In-memory",
+  ephemeral: "Temporary file (resets on cold start)",
+} as const;
+
+function dbLocation(): string {
+  const { url, kind } = databaseConfig();
+  if (kind !== "remote") return url.replace(/^file:/, "");
+  try {
+    return new URL(url).host;
+  } catch {
+    return "configured";
+  }
+}
 
 export const metadata: Metadata = { title: "Settings · Rrufe Support" };
 
@@ -20,8 +42,11 @@ function Row({ label, value, live, hint }: { label: string; value: string; live?
   );
 }
 
-export default function SettingsPage() {
+export default async function SettingsPage() {
+  await connection();
   const status = engineStatus();
+  const { kind } = databaseConfig();
+  const [counts, canReset] = await Promise.all([tableCounts().catch(() => null), resetAllowed()]);
   return (
     <div className="mx-auto w-full max-w-3xl px-4 pt-4 pb-12 sm:px-6">
       <PageHeader
@@ -54,6 +79,40 @@ export default function SettingsPage() {
             {"GROQ_API_KEY=gsk_...          # used now\nAI_GATEWAY_API_KEY=...         # when set, Jev takes over"}
           </pre>
         </div>
+      )}
+
+      <h2 className="mt-10 mb-3 text-sm font-semibold">Database</h2>
+      <div className="divide-y divide-line rounded-xl border border-line">
+        <Row
+          label="Connection"
+          value={counts ? DB_KIND[kind] : "Unavailable"}
+          live={Boolean(counts)}
+          hint={`${dbLocation()} · set DATABASE_URL (and DATABASE_AUTH_TOKEN) to use a hosted database`}
+        />
+        {counts && (
+          <Row
+            label="Rows"
+            value={`${counts.customers} customers · ${counts.orders} orders · ${counts.policies} policies`}
+            hint={`${counts.conversations} conversations · ${counts.agent_log} agent decisions logged · ${counts.escalations} escalations`}
+          />
+        )}
+        <Row label="Today" value={process.env.SHOP_TODAY ? `${process.env.SHOP_TODAY} (pinned by SHOP_TODAY)` : "Real date"} hint="The seed data is written for 2026-09-24. Pin SHOP_TODAY to replay the scenarios on any day." />
+        <Row
+          label="Service levels"
+          value={`Urgent ${OPS.urgentSlaHours}h · standard ${OPS.standardSlaHours}h`}
+          hint={`Late parcels go to a person after ${OPS.lateHandoffDays} days past the expected date. ${OPS.repeatThreshold}+ unanswered messages in ${OPS.repeatWindowDays} days = repeat contact.`}
+        />
+      </div>
+      {canReset && (
+        <form action={resetDemoData} className="mt-3 flex items-center justify-between gap-4 rounded-xl bg-sunken px-4 py-3 text-[13px] text-ink-2">
+          <span>Chat messages are written to the conversations and agent_log tables. Reset to go back to the seed data.</span>
+          <button
+            type="submit"
+            className="shrink-0 rounded-lg border border-line-strong bg-surface px-3 py-1.5 font-medium text-ink shadow-[0_1px_2px_rgba(16,24,40,0.04)] hover:bg-hover"
+          >
+            Reset demo data
+          </button>
+        </form>
       )}
 
       <h2 className="mt-10 mb-3 text-sm font-semibold">Guard thresholds</h2>

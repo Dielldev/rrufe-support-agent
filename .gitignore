@@ -40,3 +40,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local database (rebuilt from db/schema.sql + db/seed.sql)
+/db/shop.db*

@@ -2,7 +2,6 @@
 
 import { useRouter } from "next/navigation";
 import { Fragment, useCallback, useEffect, useState } from "react";
-import { SENDERS } from "@/lib/data/customers";
 import type { TriageResult } from "@/lib/engine/types";
 import { SCENARIOS, type Scenario } from "@/lib/scenarios";
 import { DecisionPill, PageHeader } from "../console/ui";
@@ -19,7 +18,7 @@ export function TestRunner() {
   const [runs, setRuns] = useState<Record<string, Run>>({});
   const [running, setRunning] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
-  const { prefill } = useChat();
+  const { prefill, findSender } = useChat();
   const router = useRouter();
 
   const runAll = useCallback(async () => {
@@ -29,8 +28,8 @@ export function TestRunner() {
     for (const s of SCENARIOS) {
       try {
         const [standard, stress] = await Promise.all([
-          triage(s.text, s.senderId, "standard"),
-          triage(s.text, s.senderId, "stress"),
+          triage(s.text, s.senderId, "standard", [], false),
+          triage(s.text, s.senderId, "stress", [], false),
         ]);
         setRuns((r) => ({ ...r, [s.id]: { standard, stress } }));
       } catch (err) {
@@ -100,7 +99,7 @@ export function TestRunner() {
           <tbody className="divide-y divide-line">
             {SCENARIOS.map((s, i) => {
               const run = runs[s.id];
-              const sender = SENDERS.find((x) => x.id === s.senderId)!;
+              const sender = findSender(s.senderId);
               const isOpen = open === s.id;
               return (
                 <Fragment key={s.id}>

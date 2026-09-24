@@ -41,19 +41,16 @@ export const INTENTS = [
 export type Intent = (typeof INTENTS)[number];
 
 export type Language = "sq" | "en";
-export type Channel = "email" | "instagram" | "viber";
+export type Channel = (typeof CHANNELS)[number];
 export type PiiField = "address" | "phone" | "email";
-export type ProductCategory =
-  | "headphones"
-  | "laptop"
-  | "tablet"
-  | "phone"
-  | "console"
-  | "tv"
-  | "speaker";
+/** Mirrors the CHECK constraint on products.category in db/schema.sql. */
+export const PRODUCT_CATEGORIES = ["laptop", "headphones", "phone", "charger"] as const;
+export type ProductCategory = (typeof PRODUCT_CATEGORIES)[number];
+export const CHANNELS = ["email", "instagram", "viber"] as const;
 
 /** Who sent the message, as the inbox platform reports it (not as the text claims). */
 export interface Sender {
+  /** `${channel}:${handle}`, e.g. "viber:+38344100101". */
   id: string;
   /** Customer profile this inbox account is linked to (set by the platform/CRM, not by message text). */
   customerId?: string;
@@ -89,6 +86,9 @@ export interface Signals {
   repeat: Detection;
   thirdParty: Detection & { relation?: string };
   personalData: Detection & { fields: PiiField[] };
+  /** A topic recognised from keywords (installments, trade-in…), whether or not a policy covers it. */
+  topic: Detection & { topicId?: string };
+  /** A recognised topic with no row in the policies table. */
   policyGap: Detection & { topicId?: string };
   /** Order number mentioned earlier in this conversation by the same sender. */
   contextOrderId?: string;
@@ -160,9 +160,9 @@ export type BriefKind =
   | "verify_generic"
   | "need_order_number"
   | "order_not_found"
-  | "store_info"
   | "delivery_info"
-  | "payment_methods"
+  | "policy_quote"
+  | "warranty_handoff"
   | "escalate_upset"
   | "escalate_policy_gap"
   | "escalate_no_policy"
@@ -248,7 +248,12 @@ export interface TriageResult {
     handoff?: Handoff;
     phrasing: PhrasingView;
   };
+  /** What the audit log needs: the topic and the order the facts came from (only when it exists in the records). */
+  intent: Intent;
+  orderId?: string;
   engines: { decision: string; phrasing: string };
+  /** Set by the API when the message and decision were written to conversations / agent_log. */
+  audit?: { convId: number } | { error: string };
   timings: { totalMs: number };
 }
 

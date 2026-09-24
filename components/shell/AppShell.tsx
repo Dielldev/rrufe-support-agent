@@ -4,7 +4,10 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, type ComponentType, type FormEvent, type ReactNode } from "react";
 import { BookIcon, ChatIcon, FlowIcon, GearIcon, HumanIcon, PackageIcon, PlusIcon, SearchIcon, TestIcon } from "../icons";
+import type { Sender } from "@/lib/engine/types";
+import type { CustomerPersona } from "@/lib/db/repo";
 import { ChatProvider, useChat } from "./ChatProvider";
+import { UserPickerModal } from "./UserPickerModal";
 
 type IconType = ComponentType<{ size?: number }>;
 
@@ -17,10 +20,21 @@ const NAV: { href: string; label: string; icon: IconType }[] = [
   { href: "/settings", label: "Settings", icon: GearIcon },
 ];
 
-export function AppShell({ children }: { children: ReactNode }) {
+export function AppShell({
+  children,
+  senders,
+  personas = [],
+  initialCustomerId = null,
+}: {
+  children: ReactNode;
+  senders: Sender[];
+  personas?: CustomerPersona[];
+  initialCustomerId?: string | null;
+}) {
   return (
-    <ChatProvider>
+    <ChatProvider senders={senders} personas={personas} initialCustomerId={initialCustomerId}>
       <Frame>{children}</Frame>
+      <UserPickerModal />
     </ChatProvider>
   );
 }
@@ -61,7 +75,7 @@ function Tooltip({ label }: { label: string }) {
 }
 
 function Rail({ pathname }: { pathname: string }) {
-  const { reset } = useChat();
+  const { reset, activeCustomer, setIsUserPickerOpen } = useChat();
   const router = useRouter();
   const item =
     "group relative grid size-8 place-items-center rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-ink/20 focus-visible:outline-none";
@@ -97,10 +111,82 @@ function Rail({ pathname }: { pathname: string }) {
           );
         })}
       </div>
-      <div className="mt-auto grid size-8 place-items-center rounded-full bg-sunken text-faint ring-1 ring-line" title="Support agent">
-        <HumanIcon size={15} />
-      </div>
+      <button
+        type="button"
+        onClick={() => setIsUserPickerOpen(true)}
+        aria-label="Switch customer account"
+        className="mt-auto grid size-8 place-items-center rounded-full bg-sunken text-ink ring-1 ring-line hover:ring-line-strong hover:bg-hover transition-colors"
+        title={activeCustomer ? `Active account: ${activeCustomer.name} (click to switch)` : "Choose customer account"}
+      >
+        {activeCustomer ? (
+          <span className="text-[11px] font-semibold text-ink">
+            {activeCustomer.name
+              .split(" ")
+              .map((p) => p[0])
+              .slice(0, 2)
+              .join("")
+              .toUpperCase()}
+          </span>
+        ) : (
+          <HumanIcon size={15} />
+        )}
+      </button>
     </nav>
+  );
+}
+
+function CustomerPill() {
+  const { activeCustomer, activeCustomerId, setIsUserPickerOpen } = useChat();
+
+  if (activeCustomerId === "all") {
+    return (
+      <button
+        type="button"
+        onClick={() => setIsUserPickerOpen(true)}
+        className="group flex items-center gap-2 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-[12px] font-medium text-ink shadow-[0_1px_2px_rgba(16,24,40,0.04)] hover:bg-hover transition-colors"
+      >
+        <span className="grid size-5 place-items-center rounded-md bg-sunken text-muted">
+          <PackageIcon size={12} />
+        </span>
+        <span className="font-medium">All Store Orders</span>
+        <span className="text-[11px] text-muted group-hover:text-ink">Switch ▾</span>
+      </button>
+    );
+  }
+
+  if (activeCustomer) {
+    return (
+      <button
+        type="button"
+        onClick={() => setIsUserPickerOpen(true)}
+        className="group flex items-center gap-2 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-[12px] font-medium text-ink shadow-[0_1px_2px_rgba(16,24,40,0.04)] hover:bg-hover transition-colors"
+      >
+        <span className="grid size-5 place-items-center rounded-full bg-ink text-[10px] font-semibold text-white">
+          {activeCustomer.name
+            .split(" ")
+            .map((p) => p[0])
+            .slice(0, 2)
+            .join("")
+            .toUpperCase()}
+        </span>
+        <span className="truncate max-w-[120px] sm:max-w-[180px] font-semibold">{activeCustomer.name}</span>
+        <span className="hidden sm:inline text-muted font-normal">
+          · {activeCustomer.orderCount} order{activeCustomer.orderCount === 1 ? "" : "s"}
+        </span>
+        <span className="text-[11px] text-muted group-hover:text-ink">Switch ▾</span>
+      </button>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => setIsUserPickerOpen(true)}
+      className="flex items-center gap-1.5 rounded-lg border border-line-strong bg-ink text-white px-2.5 py-1.5 text-[12px] font-medium shadow-[0_1px_2px_rgba(16,24,40,0.08)] hover:bg-ink/90 transition-colors"
+    >
+      <HumanIcon size={13} />
+      <span>Select Customer</span>
+    </button>
   );
 }
 
@@ -126,7 +212,8 @@ function TopBar() {
   }
 
   return (
-    <header className="relative z-10 flex h-14 shrink-0 items-center justify-end px-3">
+    <header className="relative z-10 flex h-14 shrink-0 items-center justify-between px-3 sm:px-6">
+      <CustomerPill />
       <form onSubmit={search} role="search">
         <label className="flex w-44 items-center gap-2 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-[13px] shadow-[0_1px_2px_rgba(16,24,40,0.04)] focus-within:border-line-strong sm:w-56">
           <SearchIcon size={14} className="shrink-0 text-muted" />

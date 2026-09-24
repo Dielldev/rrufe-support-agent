@@ -7,11 +7,14 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "vitest run"
+    "test": "vitest run",
+    "db:setup": "node scripts/db.mjs setup",
+    "db:reset": "node scripts/db.mjs reset"
   },
   "dependencies": {
     "@ai-sdk/gateway": "^4.0.91",
     "@ai-sdk/groq": "^4.0.48",
+    "@libsql/client": "^0.18.0",
     "ai": "^7.0.113",
     "next": "16.3.6",
     "react": "19.2.8",

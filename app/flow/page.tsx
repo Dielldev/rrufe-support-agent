@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { connection } from "next/server";
 import { FlowExplorer, type ScenarioTrace } from "@/components/flow/FlowExplorer";
-import { findSender } from "@/lib/data/customers";
+import { resolveSender } from "@/lib/db/repo";
 import { engineStatus } from "@/lib/engine/config";
 import { depsForMode, runPipeline } from "@/lib/engine/pipeline";
 import { RULES } from "@/lib/engine/rules";
@@ -15,7 +15,7 @@ export default async function FlowPage() {
   // deterministic path runs without models so the page never waits on the network.
   const traces: ScenarioTrace[] = await Promise.all(
     SCENARIOS.map(async (scenario) => {
-      const input = { text: scenario.text, sender: findSender(scenario.senderId)!, thread: [] };
+      const input = { text: scenario.text, sender: (await resolveSender(scenario.senderId))!, thread: [] };
       const [standard, stress] = await Promise.all([
         runPipeline(input, { proposer: null, phraser: null }),
         runPipeline(input, depsForMode("stress")),
