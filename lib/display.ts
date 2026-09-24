@@ -1,13 +1,21 @@
-import { listConversations, listOrders, listSenders } from "@/lib/db/repo";
+import { findCustomer, listConversations, listOrders, listSenders, ordersOfCustomer } from "@/lib/db/repo";
 import { SHOP_TIME_ZONE, shopNow } from "@/lib/shop/operations";
 import { calendarDay, daysBetween, isoDay } from "@/lib/engine/text";
 
-/** Plain, serializable view of the database for the Orders page. */
-export async function shopRecords(now: Date = shopNow()) {
+/** Plain, serializable view of the database for the Orders page, optionally isolated to a customer. */
+export async function shopRecords(now: Date = shopNow(), customerId?: string) {
   const today = calendarDay(now, SHOP_TIME_ZONE);
-  const [orders, senders, conversations] = await Promise.all([listOrders(), listSenders(), listConversations(today, 60)]);
+  const isIsolated = Boolean(customerId && customerId !== "all");
+  const [orders, senders, conversations, customer] = await Promise.all([
+    isIsolated ? ordersOfCustomer(customerId!) : listOrders(),
+    listSenders(),
+    listConversations(today, 60, isIsolated ? customerId : undefined),
+    isIsolated ? findCustomer(customerId!) : Promise.resolve(undefined),
+  ]);
   return {
     today: isoDay(today),
+    activeCustomer: customer,
+    isIsolated,
     orders: orders.map((o) => ({
       id: o.id,
       /** Inbox accounts the agent treats as this order's buyer. */

@@ -1,9 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { connection } from "next/server";
 import { PageHeader } from "@/components/console/ui";
 import { ChannelIcon } from "@/components/icons";
+import { OrderCustomerBanner } from "@/components/orders/OrderCustomerBanner";
 import { shopRecords } from "@/lib/display";
+import { shopNow } from "@/lib/shop/operations";
 
 export const metadata: Metadata = { title: "Orders · Rrufe Support" };
 
@@ -18,11 +21,17 @@ const STATUS: Record<string, { label: string; dot: string }> = {
 
 const ACTION: Record<string, string> = { auto_reply: "Auto-reply", escalate: "Escalated" };
 
-export default async function OrdersPage({ searchParams }: PageProps<"/orders">) {
+export default async function OrdersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string | string[] }>;
+}) {
   const { q } = await searchParams;
   const query = (Array.isArray(q) ? q[0] : q)?.trim().toLowerCase() ?? "";
   await connection();
-  const records = await shopRecords();
+  const jar = await cookies();
+  const customerId = jar.get("rrufe_customer_id")?.value;
+  const records = await shopRecords(shopNow(), customerId);
   const orders = records.orders.filter((o) =>
     !query
       ? true
@@ -32,11 +41,20 @@ export default async function OrdersPage({ searchParams }: PageProps<"/orders">)
           .includes(query),
   );
 
+  const title = records.isIsolated && records.activeCustomer ? `Orders · ${records.activeCustomer.name}` : "Orders";
+  const description =
+    records.isIsolated && records.activeCustomer
+      ? `Live from the shop database for ${records.activeCustomer.name} (today = ${records.today}). Isolated account: only this customer's orders and contact history are loaded.`
+      : `Live from the shop database (today = ${records.today}). Each order belongs to one customer, and only the inbox accounts shown under the buyer get its details without extra verification.`;
+
   return (
     <div className="mx-auto w-full max-w-5xl px-4 pt-4 pb-12 sm:px-6">
-      <PageHeader
-        title="Orders"
-        description={`Live from the shop database (today = ${records.today}). Each order belongs to one customer, and only the inbox accounts shown under the buyer get its details without extra verification.`}
+      <PageHeader title={title} description={description} />
+
+      <OrderCustomerBanner
+        customer={records.activeCustomer}
+        orderCount={records.orders.length}
+        isIsolated={records.isIsolated}
       />
 
       {query && (
@@ -108,8 +126,10 @@ export default async function OrdersPage({ searchParams }: PageProps<"/orders">)
             ))}
             {orders.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-10 text-center text-muted">
-                  No orders match.
+                <td colSpan={7} className="px-4 py-12 text-center text-muted">
+                  {records.isIsolated && records.activeCustomer
+                    ? `No orders found for ${records.activeCustomer.name}. This account currently has no purchase history in the database.`
+                    : "No orders match."}
                 </td>
               </tr>
             )}
@@ -117,10 +137,13 @@ export default async function OrdersPage({ searchParams }: PageProps<"/orders">)
         </table>
       </div>
 
-      <h2 className="mt-10 mb-3 text-sm font-semibold">Conversations</h2>
+      <h2 className="mt-10 mb-3 text-sm font-semibold">
+        {records.isIsolated && records.activeCustomer ? `Conversations · ${records.activeCustomer.name}` : "Conversations"}
+      </h2>
       <p className="mb-3 text-sm text-muted">
-        Every inbox message and what the agent did with it (the conversations, agent_log and escalations tables). A message with no
-        agent_log row counts as unanswered; two or more in 14 days make the customer a repeat contact, which always escalates.
+        {records.isIsolated && records.activeCustomer
+          ? `Inbox messages sent by ${records.activeCustomer.name}. The support agent consults this history to detect unanswered inquiries and enforce repeat-contact rules.`
+          : "Every inbox message and what the agent did with it (the conversations, agent_log and escalations tables). A message with no agent_log row counts as unanswered; two or more in 14 days make the customer a repeat contact, which always escalates."}
       </p>
       <div className="overflow-x-auto rounded-xl border border-line">
         <table className="w-full min-w-[720px] text-left text-[13px]">
@@ -149,6 +172,15 @@ export default async function OrdersPage({ searchParams }: PageProps<"/orders">)
                 </td>
               </tr>
             ))}
+            {records.conversations.length === 0 && (
+              <tr>
+                <td colSpan={5} className="px-4 py-8 text-center text-muted">
+                  {records.isIsolated && records.activeCustomer
+                    ? `No previous contact history recorded for ${records.activeCustomer.name}.`
+                    : "No conversations recorded."}
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
