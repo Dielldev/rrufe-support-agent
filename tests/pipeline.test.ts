@@ -342,7 +342,8 @@ describe("engine selection", () => {
 
   it("uses Jev when a gateway key exists, else Groq, else rules", () => {
     delete process.env.AI_GATEWAY_API_KEY;
-    delete process.env.VERCEL_OIDC_TOKEN;
+    delete process.env.USE_AI_GATEWAY;
+    process.env.VERCEL_OIDC_TOKEN = "present-but-not-opted-in";
     delete process.env.GROQ_API_KEY;
     expect(decisionProvider()).toBe("rules");
     process.env.GROQ_API_KEY = "test";

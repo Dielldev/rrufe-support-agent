@@ -39,9 +39,11 @@ cp .env.example .env.local   # set GROQ_API_KEY now; add AI_GATEWAY_API_KEY late
 
 | Variable | Effect |
 | --- | --- |
-| `AI_GATEWAY_API_KEY` / `VERCEL_OIDC_TOKEN` | Enables `typesafe-ai/jev` for the decision proposal and a gateway model for phrasing |
+| `AI_GATEWAY_API_KEY` | Enables `typesafe-ai/jev` for the decision proposal and a gateway model for phrasing |
 | `GROQ_API_KEY` / `GROQ_MODEL` / `GROQ_PHRASING_MODEL` | Groq fallback: decision model (default `openai/gpt-oss-120b`) and phrasing model (default `openai/gpt-oss-20b`) |
 | `PHRASING_MODEL` | Phrasing model on the gateway (default `anthropic/claude-haiku-4.5`) |
+| `USE_AI_GATEWAY=1` | Use the OIDC token Vercel injects instead of an API key (opt-in, so the token alone never switches engines) |
+| `DEMO_PASSWORD` / `DEMO_USER` | When set, the whole site and API sit behind HTTP Basic auth (user defaults to `rrufe`) |
 | `JEV_DISABLED=1` / `GROQ_DISABLED=1` / `PHRASING_DISABLED=1` | Switch any of them off |
 
 The Settings page shows which engines are live. If the model times out, errors or returns a label outside the fixed list, the guard records it and the rules decide alone.

@@ -12,9 +12,14 @@ export interface EngineStatus {
   phrasing: { live: boolean; provider: PhrasingProvider; label: string };
 }
 
-/** AI Gateway auth: an API key, or the OIDC token `vercel env pull` writes. */
+/**
+ * AI Gateway (and so Jev) is used only when you opt in: an explicit API key, or
+ * USE_AI_GATEWAY=1 to rely on the OIDC token Vercel injects into every
+ * deployment. The token's mere presence doesn't switch engines.
+ */
 export function gatewayConfigured(): boolean {
-  return Boolean(process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN);
+  if (process.env.AI_GATEWAY_API_KEY) return true;
+  return process.env.USE_AI_GATEWAY === "1" && Boolean(process.env.VERCEL_OIDC_TOKEN);
 }
 
 /**
