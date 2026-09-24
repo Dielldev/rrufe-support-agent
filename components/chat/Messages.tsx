@@ -83,6 +83,11 @@ export function AgentMessage({ result, mode }: { result: TriageResult; mode: Run
             {s.label}
           </span>
           <span className="text-faint">· {result.outcome}</span>
+          {result.why.phrasing.engine === "model" && (
+            <span className="rounded-md border border-line bg-surface px-1.5 py-0.5 text-[11px] font-medium text-ink-2 shadow-xs">
+              ⚡ {result.why.phrasing.phraser?.replace("groq/", "")} ({result.why.phrasing.latencyMs ?? result.timings.totalMs}ms)
+            </span>
+          )}
           {mode === "stress" && <span className="text-faint">· stress test</span>}
         </div>
 
