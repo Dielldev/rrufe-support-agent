@@ -1,0 +1,81 @@
+@import "tailwindcss";
+
+@theme {
+  --color-canvas: #dfe2e6;
+  --color-surface: #ffffff;
+  --color-sunken: #f5f6f8;
+  --color-hover: #f0f1f4;
+  --color-ink: #1d2230;
+  --color-ink-2: #414756;
+  --color-muted: #6f7482;
+  --color-faint: #a2a6b0;
+  --color-line: #eceef1;
+  --color-line-strong: #dfe1e6;
+  --color-bad: #c2362b;
+
+  --color-dot-ok: #22a06b;
+  --color-dot-verify: #6e56cf;
+  --color-dot-esc: #e2862b;
+
+  --font-sans: var(--font-dm-sans);
+  --font-mono: var(--font-geist-mono);
+
+  --animate-rise: rise 240ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  --animate-blink: blink 1.2s infinite ease-in-out;
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes blink {
+    0%,
+    80%,
+    100% {
+      opacity: 0.25;
+    }
+    40% {
+      opacity: 1;
+    }
+  }
+}
+
+html,
+body {
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+::selection {
+  background: #dfe3ff;
+}
+
+.scroll-soft {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-strong) transparent;
+}
+
+/* Soft lavender glow with grain, as on the home screen. */
+.hero-glow {
+  background: radial-gradient(55% 100% at 50% 0%, rgba(150, 165, 255, 0.34) 0%, rgba(190, 200, 255, 0.16) 45%, transparent 78%);
+}
+.hero-grain {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.45 0 0 0 0 0.5 0 0 0 0 1 0 0 0 0.55 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  mask-image: radial-gradient(50% 100% at 50% 0%, #000 0%, transparent 75%);
+  opacity: 0.35;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
