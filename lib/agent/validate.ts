@@ -66,7 +66,17 @@ const LIST_MARKER = /^\s*\d{1,2}[.)]\s/gm;
 export function validateAgentReply(output: string, ctx: ReplyCheckContext): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   const text = output.trim();
+  if (/<\/?[a-z_]{2,30}(?:\s[^>]*)?>|\[\/?(?:tool_call|tool|function)[^\]]*\]/i.test(text)) {
+    issues.push({ check: "internal_leak", detail: "Contains raw markup (a leaked tool-call tag)" });
+  }
+  if (!ctx.partial && !/\p{L}{2,}\s+\p{L}{2,}/u.test(text)) issues.push({ check: "length", detail: "The reply has no sentence in it" });
   const facts = ctx.ledger.factText();
+  if (!ctx.partial && /\b(?:trac(?:e|ing request)|gjurmim\w*|gjurm[eë])\b/i.test(text) && /\b(?:open\w*|hap\w*|asked|kërkova|kerkova|started|nisa)\b/i.test(text) && !ctx.ledger.actions.some((a) => a.kind === "carrier_trace")) {
+    issues.push({ check: "new_commitment", detail: "Says a courier trace was opened, but none was" });
+  }
+  if (!ctx.partial && /\b(?:voucher\w*|coupon\w*|gift[\s-]?card|kupon\w*|vauçer\w*)\b/i.test(text) && /\b(?:below|here|attached|më poshtë|poshtë|keni marrë|you have|you've got|is yours)\b/i.test(text) && !ctx.ledger.vouchers.length) {
+    issues.push({ check: "new_commitment", detail: "Points to a voucher that wasn't issued in this reply" });
+  }
   const policyText = ctx.policies.rows.map((r) => r.text).join("\n");
   const customer = ctx.customerTexts.join("\n");
   const allowed = fold(`${facts}\n${customer}`);

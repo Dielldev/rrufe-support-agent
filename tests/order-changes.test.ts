@@ -394,3 +394,45 @@ describe("a model outage doesn't create work for staff", () => {
     expect(r.reply.text).toContain("send it again in a minute");
   });
 });
+
+describe("chat history is stored per sender", () => {
+  it("saves messages and rebuilds the agent's thread from the database", async () => {
+    const { appendChatMessage, chatThread, createChat, getChat, listChats } = await import("@/lib/db/chats");
+    const m = scripted([{ text: "Sure — what's the new address?" }]);
+    const first = "Can I change the delivery address on my order #1051?";
+    const r = await run(first, BESNIK, deps(m.agent));
+    const id = await createChat({ senderId: BESNIK, customerId: "7", firstText: first, now: NOW });
+    await appendChatMessage(id, first, r, NOW);
+    expect((await getChat(id))?.senderId).toBe(BESNIK);
+    expect(await chatThread(id)).toEqual([{ senderId: BESNIK, text: first, decision: r.decision, reply: r.reply.text }]);
+    expect((await listChats("7")).map((c) => c.id)).toEqual([id]);
+    expect(await listChats("1")).toEqual([]);
+  });
+});
+
+describe("a voucher that was issued is always shown", () => {
+  it("if the model fails after issuing it, code confirms it and the card still shows", async () => {
+    const m = scripted([{ calls: [["open_carrier_trace", { order_id: "1048" }], ["issue_delay_voucher", { order_id: "1048" }]] }, { fail: "stopped" }]);
+    const r = await run("Kjo është e papranueshme, dua kompensim për porosinë 1048", DRITA, deps(m.agent));
+    expect(r.vouchers).toHaveLength(1);
+    expect(r.reply.text).toBe("Na vjen keq për vonesën. I kërkova korrierit ta gjurmojë porosinë (referenca TRC-1048). Për pritjen, më poshtë keni një kupon për porosinë e ardhshme. Nëse keni pyetur edhe për diçka tjetër, ju lutem na shkruani sërish.");
+  });
+});
+
+describe("leaked model markup never reaches the customer", () => {
+  it("a raw tool-call tag as the reply is rejected; the issued voucher is confirmed by code", async () => {
+    const m = scripted([{ calls: [["issue_delay_voucher", { order_id: "1048" }]] }, { text: "</tool_call>" }]);
+    const r = await run("Porosia 1048 është vonë, dua kompensim", DRITA, deps(m.agent));
+    expect(r.reply.text).not.toContain("tool_call");
+    expect(r.vouchers).toHaveLength(1);
+  });
+});
+
+describe("the reply can't claim actions that weren't taken", () => {
+  it("saying a courier trace was opened without opening one is rejected", async () => {
+    const m = scripted([{ text: "Po hap një gjurmim te kurieri për porosinë #1048." }, { text: "Porosia #1048 është në rrugë me Posta e Kosovës." }]);
+    const r = await run("Ku është porosia 1048?", DRITA, deps(m.agent));
+    expect(r.agent?.issues.map((i) => i.detail)).toContain("Says a courier trace was opened, but none was");
+    expect(r.reply.text).not.toContain("gjurmim");
+  });
+});
