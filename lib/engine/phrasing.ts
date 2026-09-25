@@ -274,8 +274,9 @@ export async function phraseReply(
   }
 
   const started = performance.now();
+  const mustReply = allowFallback || brief.decision === "escalate";
   try {
-    let output = await phraser.phrase({ brief, draft, language, customerText });
+    let output = await phraser.phrase({ brief, draft, language, customerText }).catch(() => phraser.phrase({ brief, draft, language, customerText }));
     let issues = validateReply(output, brief, draft, language);
     if (issues.length && !phraser.name.includes("simulated")) {
       // One more try: most failures are one-off slips (an echoed instruction, a stray number).
@@ -288,7 +289,7 @@ export async function phraseReply(
     }
     const latencyMs = Math.round(performance.now() - started);
     if (issues.length) {
-      if (!allowFallback) {
+      if (!mustReply) {
         throw new Error(
           `AI phrasing failed validation checks: ${issues.map((i) => i.detail).join("; ")}. Template fallback is disabled in settings.`,
         );
@@ -297,7 +298,7 @@ export async function phraseReply(
     }
     return { text: output, view: { engine: "model", phraser: phraser.name, issues: [], latencyMs } };
   } catch (err) {
-    if (!allowFallback) {
+    if (!mustReply) {
       const detail = safeModelError(err, "AI phrasing model failed");
       throw new Error(`${detail}. Template fallback is disabled in settings.`);
     }
