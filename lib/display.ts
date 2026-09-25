@@ -1,4 +1,5 @@
-import { findCustomer, listConversations, listOrders, listSenders, ordersOfCustomer } from "@/lib/db/repo";
+import { customerPersonas, findCustomer, getPolicyBook, listConversations, listOrders, listSenders, ordersOfCustomer, type CustomerPersona } from "@/lib/db/repo";
+import { deliveryView } from "@/lib/agent/views";
 import { SHOP_TIME_ZONE, shopNow } from "@/lib/shop/operations";
 import { calendarDay, daysBetween, isoDay } from "@/lib/engine/text";
 
@@ -49,3 +50,30 @@ export async function shopRecords(now: Date = shopNow(), customerId?: string) {
 }
 
 export type ShopRecords = Awaited<ReturnType<typeof shopRecords>>;
+
+export async function personasWithOrderStatus(now: Date = shopNow()): Promise<CustomerPersona[]> {
+  const today = calendarDay(now, SHOP_TIME_ZONE);
+  const [personas, orders, policies] = await Promise.all([customerPersonas(), listOrders(), getPolicyBook()]);
+  const byId = new Map(orders.map((o) => [o.id, o]));
+  return personas.map((p) => ({
+    ...p,
+    orders: p.orders.map((po) => {
+      const o = byId.get(po.id);
+      if (!o) return po;
+      const d = deliveryView(o, today, policies);
+      const stage =
+        d.state === "cancelled" || d.state === "returned"
+          ? "closed"
+          : d.state === "courier_problem"
+            ? "courier_problem"
+            : d.days_late
+              ? "late"
+              : d.state === "delivered"
+                ? "delivered"
+                : d.state === "in_transit"
+                  ? "on_the_way"
+                  : "preparing";
+      return { ...po, stage, daysLate: d.days_late };
+    }),
+  }));
+}

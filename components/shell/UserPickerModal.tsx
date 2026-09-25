@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { CheckIcon, HumanIcon, PackageIcon, XIcon } from "../icons";
 import { useChat } from "./ChatProvider";
+import type { CustomerPersona } from "@/lib/db/repo";
 
 function initials(name: string): string {
   return name
@@ -101,10 +102,7 @@ export function UserPickerModal() {
                 </div>
 
                 <div className="flex items-center gap-3 shrink-0">
-                  <span className="inline-flex w-24 items-center justify-center gap-1.5 rounded-lg bg-surface border border-line py-1 text-xs font-medium text-ink shadow-[0_1px_2px_rgba(16,24,40,0.04)]">
-                    <PackageIcon size={12} className="text-muted shrink-0" />
-                    <span>{p.orderCount} {p.orderCount === 1 ? "order" : "orders"}</span>
-                  </span>
+                  <OrdersPill orders={p.orders} count={p.orderCount} />
 
                   <div
                     className={`grid size-5 place-items-center rounded-full border transition-all ${
@@ -140,5 +138,29 @@ export function UserPickerModal() {
         </div>
       </div>
     </div>
+  );
+}
+
+function OrdersPill({ orders, count }: { orders: CustomerPersona["orders"]; count: number }) {
+  const late = orders.filter((o) => o.stage === "late");
+  return (
+    <span
+      title={late.length ? late.map((o) => `#${o.id}: ${o.daysLate} days late`).join(", ") : undefined}
+      className="inline-flex min-w-24 items-center justify-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 py-1 text-xs font-medium text-ink shadow-[0_1px_2px_rgba(16,24,40,0.04)]"
+    >
+      <PackageIcon size={12} className="shrink-0 text-muted" />
+      <span>
+        {count} {count === 1 ? "order" : "orders"}
+      </span>
+      {late.length > 0 && (
+        <>
+          <span className="text-faint">·</span>
+          <span className="inline-flex items-center gap-1 font-semibold">
+            <span className="size-1.5 rounded-full bg-red-500" />
+            {late.length} late
+          </span>
+        </>
+      )}
+    </span>
   );
 }

@@ -124,6 +124,8 @@ export interface CustomerPersonaOrder {
   id: string;
   items: string;
   status: OrderStatus;
+  stage?: "late" | "on_the_way" | "preparing" | "delivered" | "closed" | "courier_problem";
+  daysLate?: number;
 }
 
 export interface CustomerPersona extends Customer {
@@ -744,7 +746,7 @@ export async function recordTriage(input: { sender: Sender; text: string; result
 // ---- status -----------------------------------------------------------------------
 
 export async function tableCounts(): Promise<Record<string, number>> {
-  const tables = ["customers", "products", "orders", "order_items", "shipments", "policies", "conversations", "agent_log", "escalations", "vouchers", "order_changes"];
+  const tables = ["customers", "products", "orders", "order_items", "shipments", "policies", "conversations", "agent_log", "escalations", "vouchers", "order_changes", "chat_sessions", "chat_messages"];
   const rows = await query(`SELECT ${tables.map((t) => `(SELECT COUNT(*) FROM ${t}) AS ${t}`).join(", ")}`);
   return Object.fromEntries(tables.map((t) => [t, num(rows[0][t])]));
 }

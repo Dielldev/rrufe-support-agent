@@ -3,7 +3,8 @@ import { DM_Sans, Geist_Mono } from "next/font/google";
 import { cookies } from "next/headers";
 import { connection } from "next/server";
 import { AppShell } from "@/components/shell/AppShell";
-import { customerPersonas, listSenders, type CustomerPersona } from "@/lib/db/repo";
+import { listSenders, type CustomerPersona } from "@/lib/db/repo";
+import { personasWithOrderStatus } from "@/lib/display";
 import type { Sender } from "@/lib/engine/types";
 import "./globals.css";
 
@@ -31,7 +32,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   let senders: Sender[] = [];
   let personas: CustomerPersona[] = [];
   try {
-    [senders, personas] = await Promise.all([listSenders(), customerPersonas()]);
+    [senders, personas] = await Promise.all([listSenders(), personasWithOrderStatus()]);
   } catch (err) {
     console.error("[layout] could not load database senders/personas", err);
   }
