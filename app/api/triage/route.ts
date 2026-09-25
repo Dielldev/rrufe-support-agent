@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { appendChatMessage, chatThread, createChat, getChat, isChatId } from "@/lib/db/chats";
 import { recordTriage, resolveSender } from "@/lib/db/repo";
 import { clientKey, rateLimit } from "@/lib/rate-limit";
 import { fallbackEnabled } from "@/lib/engine/config";
@@ -15,6 +16,7 @@ interface TriageRequest {
   record: boolean;
   /** Stream progress as NDJSON (one ProgressEvent per line, then {type:"result"}). */
   stream: boolean;
+  sessionId?: string;
 }
 
 function parse(body: unknown): TriageRequest | string {
@@ -26,6 +28,7 @@ function parse(body: unknown): TriageRequest | string {
   if (b.mode !== undefined && b.mode !== "standard" && b.mode !== "stress") return "`mode` must be standard or stress";
   if (b.record !== undefined && typeof b.record !== "boolean") return "`record` must be a boolean";
   if (b.stream !== undefined && typeof b.stream !== "boolean") return "`stream` must be a boolean";
+  if (b.sessionId !== undefined && b.sessionId !== null && !isChatId(b.sessionId)) return "`sessionId` is not a valid chat id";
   const thread = Array.isArray(b.thread) ? b.thread.slice(-30) : [];
   return {
     text: b.text.trim(),
@@ -33,6 +36,7 @@ function parse(body: unknown): TriageRequest | string {
     mode: b.mode as RunMode | undefined,
     record: b.record !== false,
     stream: b.stream === true,
+    sessionId: isChatId(b.sessionId) ? b.sessionId : undefined,
     // The client-held thread can only make decisions stricter (repeat contact,
     // third-party claims), so it's accepted as-is after shape checks. Earlier
     // replies are conversation context for the agent, never facts: every fact in
@@ -83,9 +87,19 @@ export async function POST(request: Request) {
     const fallbackCookie = jar.get("rrufe_allow_fallback")?.value;
     const allowFallback = fallbackEnabled(fallbackCookie);
 
+    const saveChat = mode === "standard" && parsed.record;
+    let chatId: string | undefined;
+    let thread = parsed.thread ?? [];
+    if (saveChat && parsed.sessionId) {
+      const chat = await getChat(parsed.sessionId);
+      if (!chat || chat.senderId !== sender.id) return Response.json({ error: "Chat not found" }, { status: 404 });
+      chatId = chat.id;
+      thread = await chatThread(chat.id);
+    }
+
     const handle = async (onEvent?: (e: ProgressEvent) => void) => {
       const result = await runPipeline(
-        { text: parsed.text, sender, thread: parsed.thread ?? [] },
+        { text: parsed.text, sender, thread },
         // The stress test exists to show rogue output being replaced by the approved template.
         { ...depsForMode(mode, allowFallback), now, allowFallback: mode === "stress" || allowFallback, onEvent },
       );
@@ -96,6 +110,15 @@ export async function POST(request: Request) {
         } catch (err) {
           console.error("[triage] could not write the audit log", err);
           result.audit = { error: "The decision could not be written to the database." };
+        }
+      }
+      if (saveChat) {
+        try {
+          chatId ??= await createChat({ senderId: sender.id, customerId: sender.customerId, firstText: parsed.text, now });
+          await appendChatMessage(chatId, parsed.text, result, now);
+          result.sessionId = chatId;
+        } catch (err) {
+          console.error("[triage] could not save the chat", err);
         }
       }
       return result;

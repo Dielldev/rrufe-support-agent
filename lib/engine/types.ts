@@ -368,6 +368,7 @@ export interface TriageResult {
   engines: { decision: string; phrasing: string; agent?: string };
   /** Set by the API when the message and decision were written to conversations / agent_log. */
   audit?: { convId: number } | { error: string };
+  sessionId?: string;
   timings: { totalMs: number; classifierMs?: number; agentMs?: number };
 }
 

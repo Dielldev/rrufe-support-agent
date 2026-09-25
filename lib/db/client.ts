@@ -34,7 +34,7 @@ async function hasSchema(client: Client): Promise<boolean> {
 }
 
 /** Bumped whenever db/extensions.sql or a migration below changes. */
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 /**
  * Bring a database created by an older version up to date: additive and

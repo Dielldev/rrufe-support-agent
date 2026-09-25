@@ -88,3 +88,22 @@ UPDATE policies SET
     rule_text = 'A verified customer whose order is late or held by the carrier gets a voucher for their next order, valid for 30 days: 5% off; free shipping instead when the order is €300 or more and at least 3 days late; a €5 gift card instead when the order is €500 or more and at least 5 days late. One voucher per delayed order; it is not cash, not transferable and not combined with other vouchers.',
     value = '{"percent":5,"valid_days":30,"tiers":[{"reward":"free_shipping","min_days_late":3,"min_order_eur":300},{"reward":"gift_card","amount_eur":5,"min_days_late":5,"min_order_eur":500}]}'
 WHERE topic = 'delay_compensation' AND value = '{"percent":5,"valid_days":30}';
+
+CREATE TABLE IF NOT EXISTS chat_sessions (
+    session_id  TEXT PRIMARY KEY,
+    sender_id   TEXT NOT NULL,
+    customer_id INTEGER REFERENCES customers (customer_id) ON DELETE CASCADE,
+    title       TEXT NOT NULL,
+    created_at  TEXT NOT NULL CHECK (datetime(created_at) IS NOT NULL),
+    updated_at  TEXT NOT NULL CHECK (datetime(updated_at) IS NOT NULL)
+);
+CREATE INDEX IF NOT EXISTS ix_chat_sessions_customer ON chat_sessions (customer_id, updated_at);
+
+CREATE TABLE IF NOT EXISTS chat_messages (
+    message_id  INTEGER PRIMARY KEY,
+    session_id  TEXT NOT NULL REFERENCES chat_sessions (session_id) ON DELETE CASCADE,
+    text        TEXT NOT NULL,
+    result_json TEXT NOT NULL,
+    created_at  TEXT NOT NULL CHECK (datetime(created_at) IS NOT NULL)
+);
+CREATE INDEX IF NOT EXISTS ix_chat_messages_session ON chat_messages (session_id, message_id);
