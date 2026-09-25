@@ -4,7 +4,7 @@ import { OPS } from "@/lib/shop/operations";
 import type { AccessGrant } from "./access";
 import { catalog, compensation, handoff, orderChanges, orders, payments, privacy, recovery, voice, type Skill } from "./skills";
 
-const SKILLS: Skill[] = [voice, privacy, orders, orderChanges, recovery, compensation, payments, catalog, handoff];
+export const SKILLS: Skill[] = [voice, privacy, orders, orderChanges, recovery, compensation, payments, catalog, handoff];
 
 const LANGUAGE_NAME: Record<Language, string> = { sq: "Albanian (Kosovo)", en: "English" };
 
