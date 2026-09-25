@@ -624,8 +624,8 @@ function Phrasing({ result }: { result: TriageResult }) {
         {p.rejectedDraft && (
           <blockquote className="rounded-lg bg-sunken px-3 py-2 text-muted line-through decoration-faint">{p.rejectedDraft}</blockquote>
         )}
-        {p.issues.map((i) => (
-          <p key={i.check + i.detail} className="text-xs text-bad">
+        {p.issues.map((i, n) => (
+          <p key={`${n}-${i.check}`} className="text-xs text-bad">
             ✕ <span className="font-mono">{i.check}</span> — {i.detail}
           </p>
         ))}
@@ -654,8 +654,8 @@ function Phrasing({ result }: { result: TriageResult }) {
         <blockquote className="rounded-lg bg-sunken px-3 py-2 text-muted line-through decoration-faint">{p.rejectedDraft}</blockquote>
       )}
       <ul className="space-y-0.5">
-        {p.issues.map((i) => (
-          <li key={i.check + i.detail} className="text-xs text-bad">
+        {p.issues.map((i, n) => (
+          <li key={`${n}-${i.check}`} className="text-xs text-bad">
             ✕ <span className="font-mono">{i.check}</span> — {i.detail}
           </li>
         ))}
