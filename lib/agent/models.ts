@@ -26,7 +26,7 @@ export interface AgentModel {
  * Free models are limited to 20 requests/minute and 50 requests/day (1,000/day
  * once the account has bought at least 10 credits).
  */
-export const DEFAULT_OPENROUTER_MODELS = ["qwen/qwen3.8-27b:free", "nex-agi/nex-n2.5-pro:free", "nex-agi/nex-n2.5-mini:free"];
+export const DEFAULT_OPENROUTER_MODELS = ["nvidia/nemotron-3-super-120b-a12b:free", "nvidia/nemotron-3-ultra-550b-a55b:free", "qwen/qwen3.8-27b:free"];
 
 export function openRouterModelIds(): string[] {
   const list = (process.env.OPENROUTER_MODELS ?? "").split(",").map((m) => m.trim()).filter(Boolean);
