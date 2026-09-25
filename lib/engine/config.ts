@@ -1,9 +1,11 @@
+import { agentModelId, groqAgentModelId, openRouterModelIds } from "@/lib/agent/models";
 import { groqConfigured, groqModelId, groqPhrasingModelId } from "./groq";
 import { JEV_MODEL_ID } from "./jev";
 import { DEFAULT_PHRASING_MODEL } from "./phrasing";
 
 export type DecisionProvider = "jev" | "groq" | "rules";
 export type PhrasingProvider = "gateway" | "groq" | "templates";
+export type AgentProvider = "openrouter" | "gateway" | "groq" | "none";
 
 export interface EngineStatus {
   gateway: boolean;
@@ -11,6 +13,7 @@ export interface EngineStatus {
   fallbackAllowed: boolean;
   decision: { live: boolean; provider: DecisionProvider; label: string };
   phrasing: { live: boolean; provider: PhrasingProvider; label: string };
+  agent: { live: boolean; provider: AgentProvider; label: string };
 }
 
 /**
@@ -56,9 +59,22 @@ export function phrasingProvider(): PhrasingProvider {
   return "templates";
 }
 
+/**
+ * The tool-using agent writes the reply whenever a model with tool calling is
+ * configured. Without one, the fixed rule paths and templates answer as before.
+ */
+export function agentProvider(): AgentProvider {
+  if (process.env.AGENT_DISABLED === "1") return "none";
+  if (process.env.OPENROUTER_API_KEY) return "openrouter";
+  if (gatewayConfigured()) return "gateway";
+  if (groqConfigured() && process.env.GROQ_DISABLED !== "1") return "groq";
+  return "none";
+}
+
 export function engineStatus(fallbackOverride?: boolean | string | null): EngineStatus {
   const decision = decisionProvider();
   const phrasing = phrasingProvider();
+  const agent = agentProvider();
   const fallback = fallbackEnabled(fallbackOverride);
   return {
     gateway: gatewayConfigured(),
@@ -81,6 +97,18 @@ export function engineStatus(fallbackOverride?: boolean | string | null): Engine
             : fallback
               ? "Approved templates (Fallback enabled)"
               : "Disabled (Pure AI required)",
+    },
+    agent: {
+      live: agent !== "none",
+      provider: agent,
+      label:
+        agent === "openrouter"
+          ? `OpenRouter (${openRouterModelIds().join(" → ")})${groqConfigured() && process.env.GROQ_DISABLED !== "1" ? ` → Groq (${groqAgentModelId()})` : ""} + scoped tools`
+          : agent === "gateway"
+          ? `${agentModelId()} + scoped tools`
+          : agent === "groq"
+            ? `Groq (${groqAgentModelId()}) + scoped tools`
+            : "Off — fixed rule paths answer",
     },
   };
 }

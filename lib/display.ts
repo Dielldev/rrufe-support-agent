@@ -22,6 +22,7 @@ export async function shopRecords(now: Date = shopNow(), customerId?: string) {
       linked: senders.filter((s) => s.customerId === o.customerId).map((s) => ({ channel: s.channel, handle: s.handle })),
       buyer: o.buyer,
       items: o.items.map((i) => `${i.name}${i.qty > 1 ? ` ×${i.qty}` : ""}${i.opened ? " (opened)" : ""}`).join(", "),
+      images: o.items.flatMap((i) => (i.imageUrl ? [{ name: i.name, url: i.imageUrl }] : [])),
       total: o.items.reduce((sum, i) => sum + i.qty * i.price, 0),
       status: o.status,
       carrier: o.shipment?.carrier,
@@ -29,6 +30,9 @@ export async function shopRecords(now: Date = shopNow(), customerId?: string) {
       expectedBy: o.shipment ? isoDay(o.shipment.expectedMax) : undefined,
       placedDaysAgo: daysBetween(o.placedAt, today),
       deliveredDaysAgo: o.deliveredAt ? daysBetween(o.deliveredAt, today) : undefined,
+      placedOn: isoDay(o.placedAt),
+      shippedOn: o.shipment ? isoDay(o.shipment.shippedAt) : undefined,
+      deliveredOn: o.deliveredAt ? isoDay(o.deliveredAt) : undefined,
     })),
     conversations: conversations.map((c) => ({
       id: c.convId,

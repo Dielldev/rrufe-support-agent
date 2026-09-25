@@ -110,10 +110,16 @@ describe("the five challenge messages — rules only, facts from the seed DB", (
     for (const pii of ["Nena Tereze", ARBEN_EMAIL, "100202"]) expect(r.reply.text).not.toContain(pii);
   });
 
-  it("5 · installments: no row in policies → R2", async () => {
+  it("5 · installments: answered from the installments policy on file (db/extensions.sql)", async () => {
     const r = await run(SCENARIOS[4].text, ARDIT);
+    expect(r.why.firedRule.id).toBe("R6");
+    expect(r.reply.text).toContain("Raiffeisen Bank");
+  });
+
+  it("a topic with no policy row still goes to a person (R2)", async () => {
+    const r = await run("A mund ta ndërroj telefonin e vjetër me të ri (trade-in)?", ARDIT);
     expect(r.why.firedRule.id).toBe("R2");
-    expect(r.reply.text).toContain("blerjen me këste");
+    expect(r.decision).toBe("escalate");
   });
 });
 
@@ -149,7 +155,7 @@ describe("Jev / Groq integration (mock models)", () => {
         warnings: [],
       }),
     });
-    const r = await run(SCENARIOS[4].text, ARDIT, { now: NOW, proposer: (st) => proposeWithLanguageModel(model, st, "groq/mock", "Groq"), phraser: null, allowFallback: true });
+    const r = await run("Can I do a trade-in of my old phone?", ARDIT, { now: NOW, proposer: (st) => proposeWithLanguageModel(model, st, "groq/mock", "Groq"), phraser: null, allowFallback: true });
     expect(r.why.guard.outcome).toBe("model_unavailable");
     expect(r.decision).toBe("escalate");
   });
@@ -186,6 +192,8 @@ describe("paths computed from DB records and policies", () => {
     ["Where is my order?", LIRIJE_IG, "resolve", "R6"],
     ["Where is my order #1034?", FATMIRE, "escalate", "R5"],
     ["hello", DRITA, "resolve", "R6"],
+    ["Do you have headphones under €100?", GUEST, "resolve", "R6"],
+    ["Do you do gift wrapping?", GUEST, "escalate", "R2"],
   ] as const)("%s (%s) → %s via %s", async (text, sender, decision, rule) => {
     const r = await run(text, sender);
     expect(r.decision).toBe(decision);
@@ -194,10 +202,10 @@ describe("paths computed from DB records and policies", () => {
 
   it("adding a policy row makes the agent answer it; the audit log is written", async () => {
     const client = await freshDb();
-    await client.execute("INSERT INTO policies (topic, rule_text, value) VALUES ('installments', 'Installments: 3, 6 or 12 months with partner banks.', NULL)");
-    const r = await run(SCENARIOS[4].text, ARDIT);
+    await client.execute("INSERT INTO policies (topic, rule_text, value) VALUES ('trade_in', 'Trade-ins: bring your old phone to the store for a credit valued on the spot.', NULL)");
+    const r = await run("Can I do a trade-in of my old phone?", ARDIT);
     expect(r.decision).toBe("resolve");
-    expect(r.reply.text).toContain("12 months");
+    expect(r.reply.text).toContain("valued on the spot");
 
     const sender = (await resolveSender(VALMIRA))!;
     const esc = await run(SCENARIOS[2].text, VALMIRA);
@@ -256,5 +264,48 @@ describe("engine selection", () => {
     await expect(run("Where is order #1048?", DRITA, { now: NOW, proposer: null, phraser: null, allowFallback: false })).rejects.toThrow(
       "AI phrasing model is required",
     );
+  });
+});
+
+describe("order listing and order cards", () => {
+  it("shows all orders for verified customer asking how many orders they have", async () => {
+    const r = await run("can you check how many orders i have?", LEOTRIM);
+    expect(r.decision).toBe("resolve");
+    expect(r.why.firedRule.id).toBe("R6");
+    expect(r.reply.text).toContain("3 orders on file");
+    expect(r.reply.text).toContain("#1044");
+    expect(r.reply.text).toContain("#1014");
+    expect(r.orders).toBeDefined();
+    expect(r.orders?.length).toBe(3);
+    expect(r.orders?.map((o) => o.id)).toEqual(expect.arrayContaining(["1054", "1044", "1014"]));
+  });
+
+  it("handles Albanian inquiry for customer order count", async () => {
+    const r = await run("Sa porosi kam të regjistruara?", LEOTRIM);
+    expect(r.decision).toBe("resolve");
+    expect(r.reply.language).toBe("sq");
+    expect(r.reply.text).toContain("3 porosi të regjistruara");
+    expect(r.orders?.length).toBe(3);
+  });
+
+  it("confirms 0 orders for verified customer with no orders", async () => {
+    const r = await run("how many orders do I have?", ARDIT);
+    expect(r.decision).toBe("resolve");
+    expect(r.reply.text).toMatch(/no orders on file/i);
+    expect(r.orders).toEqual([]);
+  });
+
+  it("blocks third party asking for order list", async () => {
+    const r = await run("I am Arben's brother, what orders does he have?", BROTHER);
+    expect(r.decision).toBe("request_verification");
+    expect(r.why.firedRule.id).toBe("R3");
+    expect(r.orders).toBeUndefined();
+  });
+
+  it("attaches single order card when verified customer checks single order status", async () => {
+    const r = await run("Porosia #1048 ende s'ka ardhur. Kanë kaluar 6 ditë.", DRITA);
+    expect(r.decision).toBe("resolve");
+    expect(r.orders?.length).toBe(1);
+    expect(r.orders?.[0].id).toBe("1048");
   });
 });

@@ -41,7 +41,9 @@ CREATE TABLE products (
     product_id INTEGER PRIMARY KEY,
     name       TEXT NOT NULL UNIQUE,
     category   TEXT NOT NULL CHECK (category IN ('laptop', 'headphones', 'phone', 'charger')),
-    price      REAL NOT NULL CHECK (price >= 0)          -- EUR
+    price      REAL NOT NULL CHECK (price >= 0),         -- EUR
+    stock      INTEGER CHECK (stock IS NULL OR stock >= 0), -- units on hand; NULL = not tracked
+    image_url  TEXT
 );
 
 -- ---------------------------------------------------------------------------

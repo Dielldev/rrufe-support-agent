@@ -25,17 +25,17 @@ INSERT INTO customers (customer_id, name, phone, email, instagram_handle, langua
 -- ---------------------------------------------------------------------------
 -- products (10)
 -- ---------------------------------------------------------------------------
-INSERT INTO products (product_id, name, category, price) VALUES
-(1,  'Lenovo IdeaPad Slim 3 15"',     'laptop',     549.00),
-(2,  'HP Pavilion 15',                'laptop',     679.00),
-(3,  'ASUS Vivobook 16',              'laptop',     599.00),
-(4,  'Sony WH-CH720N',                'headphones', 129.00),
-(5,  'JBL Tune 520BT',                'headphones',  59.00),
-(6,  'Samsung Galaxy A55 5G',         'phone',      399.00),
-(7,  'Xiaomi Redmi Note 13',          'phone',      219.00),
-(8,  'Apple iPhone 15 128GB',         'phone',      749.00),
-(9,  'Anker 65W USB-C GaN Charger',   'charger',     39.90),
-(10, 'Samsung 25W USB-C Fast Charger','charger',     19.90);
+INSERT INTO products (product_id, name, category, price, stock) VALUES
+(1,  'Lenovo IdeaPad Slim 3 15"',     'laptop',     549.00,   4),
+(2,  'HP Pavilion 15',                'laptop',     679.00,   0),
+(3,  'ASUS Vivobook 16',              'laptop',     599.00,   7),
+(4,  'Sony WH-CH720N',                'headphones', 129.00,  12),
+(5,  'JBL Tune 520BT',                'headphones',  59.00,  25),
+(6,  'Samsung Galaxy A55 5G',         'phone',      399.00,   6),
+(7,  'Xiaomi Redmi Note 13',          'phone',      219.00,   9),
+(8,  'Apple iPhone 15 128GB',         'phone',      749.00,   2),
+(9,  'Anker 65W USB-C GaN Charger',   'charger',     39.90,  30),
+(10, 'Samsung 25W USB-C Fast Charger','charger',     19.90,   0);
 
 -- ---------------------------------------------------------------------------
 -- orders (14)
@@ -54,7 +54,11 @@ INSERT INTO orders (order_id, customer_id, order_date, status, ship_address, pay
 (1046, 7, '2026-09-15', 'delivered',  'Rr. Agim Ramadani 45, Prishtine',  'card'),
 (1048, 1, '2026-09-16', 'shipped',    'Rr. Fehmi Agani 8, Prishtine',     'card'),             -- Drita: 8 days ago, LATE
 (1049, 8, '2026-09-22', 'shipped',    'Rr. Luan Haradinaj 6, Prishtine',  'cash_on_delivery'), -- in transit, on time
-(1050, 6, '2026-09-23', 'processing', 'Rr. Garibaldi 19, Prishtine',      'bank_transfer');    -- not shipped yet
+(1050, 6, '2026-09-23', 'processing', 'Rr. Garibaldi 19, Prishtine',      'bank_transfer'),
+(1052, 4, '2026-08-30', 'shipped',    'Rr. Ukshin Hoti 27, Prishtine',    'card'),
+(1053, 2, '2026-09-09', 'shipped',    'Rr. Nena Tereze 12, Prishtine',    'card'),
+(1054, 3, '2026-09-14', 'shipped',    'Rr. Rexhep Luci 33, Prishtine',    'card'),
+(1055, 8, '2026-09-12', 'shipped',    'Rr. Luan Haradinaj 6, Prishtine',  'cash_on_delivery');    -- not shipped yet
 
 -- ---------------------------------------------------------------------------
 -- order_items (17)      opened_flag = 1 -> customer opened / used the item
@@ -76,7 +80,12 @@ INSERT INTO order_items (item_id, order_id, product_id, qty, price, opened_flag)
 (14, 1048,  6, 1, 399.00, 0),
 (15, 1048, 10, 1,  19.90, 0),
 (16, 1049,  9, 1,  39.90, 0),
-(17, 1050,  2, 1, 679.00, 0);
+(17, 1050,  2, 1, 679.00, 0),
+(20, 1052,  8, 1, 749.00, 0),
+(21, 1053,  3, 1, 599.00, 0),
+(22, 1053,  5, 1,  59.00, 0),
+(23, 1054,  7, 1, 219.00, 0),
+(24, 1055,  6, 1, 399.00, 0);
 
 -- ---------------------------------------------------------------------------
 -- shipments (12) : every shipped/delivered order has one
@@ -93,12 +102,16 @@ INSERT INTO shipments (shipment_id, order_id, carrier, shipped_date, expected_mi
 (9,  1044, 'Kurier Prishtina','2026-09-15', '2026-09-16', '2026-09-18', 'delivered',  '2026-09-18 13:00:00'),
 (10, 1046, 'Posta e Kosoves', '2026-09-16', '2026-09-17', '2026-09-21', 'delivered',  '2026-09-21 12:10:00'),
 (11, 1048, 'Posta e Kosoves', '2026-09-18', '2026-09-18', '2026-09-22', 'in_transit', '2026-09-21 09:12:00'),  -- shipped 6 days ago, expected_max passed -> LATE
-(12, 1049, 'Kurier Prishtina','2026-09-23', '2026-09-24', '2026-09-28', 'in_transit', '2026-09-23 17:45:00');
+(12, 1049, 'Kurier Prishtina','2026-09-23', '2026-09-24', '2026-09-28', 'in_transit', '2026-09-23 17:45:00'),
+(13, 1052, 'DHL Express',     '2026-08-31', '2026-09-01', '2026-09-05', 'in_transit', '2026-09-02 08:30:00'),
+(14, 1053, 'Posta e Kosoves', '2026-09-10', '2026-09-11', '2026-09-15', 'in_transit', '2026-09-12 10:05:00'),
+(15, 1054, 'Kurier Prishtina','2026-09-15', '2026-09-16', '2026-09-20', 'in_transit', '2026-09-17 16:40:00'),
+(16, 1055, 'Posta e Kosoves', '2026-09-13', '2026-09-14', '2026-09-15', 'in_transit', '2026-09-14 11:20:00');
 
 -- ---------------------------------------------------------------------------
 -- policies : exactly these four.
--- NOTE: there is intentionally NO installments / financing policy. The agent must
--- escalate such questions instead of inventing an answer.
+-- Installments, payment methods and delay compensation live in db/extensions.sql,
+-- which is applied after this file (and once to databases created before it).
 -- ---------------------------------------------------------------------------
 INSERT INTO policies (policy_id, topic, rule_text, value) VALUES
 (1, 'delivery', 'Delivery takes 2-4 working days.',                                                                  '2-4'),

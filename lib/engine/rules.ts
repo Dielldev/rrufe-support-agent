@@ -70,6 +70,8 @@ export interface RulesOutcome {
   withheld: string[];
   handoff?: Handoff;
   summary: string;
+  /** Upset / repeat-contact evidence, for the agent (it no longer escalates by itself in agent mode). */
+  mood: { upset: boolean; repeat: boolean; evidence: string[] };
 }
 
 interface PathResult {
@@ -166,12 +168,19 @@ function unreadablePolicy(topic: string, sender: Sender): PathResult {
 }
 
 /** The dates an order should arrive between: the shipment's window, else order date + delivery policy. */
-function expectedWindow(order: Order, sheet: FactSheet): { from: Date; by: Date; source: "orders" | "computed" } | undefined {
+export function expectedWindowFor(
+  order: Order,
+  policies: FactSheet["policies"],
+): { from: Date; by: Date; source: "orders" | "computed" } | undefined {
   if (order.shipment) return { from: order.shipment.expectedMin, by: order.shipment.expectedMax, source: "orders" };
-  const d = sheet.policies.delivery;
+  const d = policies.delivery;
   if (!d) return undefined;
   const add = d.workingDays ? addWorkingDays : addDays;
   return { from: add(order.placedAt, d.minDays), by: add(order.placedAt, d.maxDays), source: "computed" };
+}
+
+function expectedWindow(order: Order, sheet: FactSheet) {
+  return expectedWindowFor(order, sheet.policies);
 }
 
 // ---- paths per intent --------------------------------------------------------
@@ -196,7 +205,17 @@ function needOrder(sheet: FactSheet, forWhat: string): PathResult | undefined {
   return undefined;
 }
 
-function orderStatusPath(sheet: FactSheet, signals: Signals, sender: Sender): PathResult {
+/** In agent mode, cases the agent can handle itself (it hands off if it can't). */
+function agentPath(summary: string, facts: Fact[]): PathResult {
+  return {
+    rule: "R6",
+    brief: brief("open_question", "resolve", "Handled by the agent", { slaHours: OPS.standardSlaHours }),
+    summary,
+    facts,
+  };
+}
+
+function orderStatusPath(sheet: FactSheet, signals: Signals, sender: Sender, agent = false): PathResult {
   const missing = needOrder(sheet, "delivery status");
   if (missing) return missing;
   const delivery = sheet.policies.delivery;
@@ -256,6 +275,9 @@ function orderStatusPath(sheet: FactSheet, signals: Signals, sender: Sender): Pa
       facts,
     };
   }
+  if ((order.status === "cancelled" || order.status === "returned") && agent) {
+    return agentPath(`Order #${order.id} is ${order.status}. The agent can tell the customer that; anything that moves money is handed to staff.`, facts);
+  }
   if (order.status === "cancelled" || order.status === "returned") {
     return {
       rule: "R5",
@@ -294,6 +316,12 @@ function orderStatusPath(sheet: FactSheet, signals: Signals, sender: Sender): Pa
         value: `${order.shipment.tracking.replaceAll("_", " ")} · ${fmtDate(order.shipment.lastUpdate)}`,
         source: "orders",
       });
+    }
+    if ((!order.shipment || daysLate > OPS.lateHandoffDays) && agent) {
+      return agentPath(
+        `Order #${order.id} is ${daysLate} days late${order.shipment ? "" : " and hasn't shipped"}. The agent explains, traces it and offers the delay voucher; it hands off only for a refund or cancellation.`,
+        facts,
+      );
     }
     if (!order.shipment || daysLate > OPS.lateHandoffDays) {
       const why = !order.shipment
@@ -580,9 +608,154 @@ function policyQuotePath(sheet: FactSheet, topic: string): PathResult {
   };
 }
 
+function formatOrderIds(orders: Order[], lang: string): string {
+  if (orders.length === 0) return "none";
+  const ids = orders.map((o) => `#${o.id}`);
+  if (ids.length === 1) return ids[0];
+  const joiner = lang === "sq" ? " dhe " : " and ";
+  return `${ids.slice(0, -1).join(", ")}${joiner}${ids[ids.length - 1]}`;
+}
+
+function orderListPath(sheet: FactSheet, signals: Signals, sender: Sender): PathResult {
+  const third = signals.thirdParty.hit;
+  if (third) {
+    return {
+      rule: "R3",
+      brief: brief(
+        "pii_third_party",
+        "request_verification",
+        "Order details withheld",
+        {},
+        { withhold: ["Customer order history"] },
+      ),
+      summary: `The requester says they are writing for someone else (${signals.thirdParty.relation ? `“${signals.thirdParty.relation}”` : "a third party"}). Rule R3: order history goes only to the account owner.`,
+      facts: [
+        { label: "Requester", value: `${sender.channel} ${sender.handle}`, source: "channel" },
+        { label: "Requester = buyer?", value: "No — acting for someone else", source: "computed", tone: "bad" },
+      ],
+      withheld: ["Customer order history"],
+      actions: [{ kind: "withheld", label: "Order details withheld", detail: `Order list requested by third party (${sender.channel} ${sender.handle})` }],
+    };
+  }
+
+  if (!sender.customerId) {
+    return {
+      rule: "R4",
+      brief: brief("order_unverified", "request_verification", "Verification needed for order history"),
+      summary: `The sender (${sender.channel} ${sender.handle}) is not linked to any customer account. Rule R4: ask for an order number or customer verification before disclosing order history.`,
+      facts: [
+        { label: "Channel identity", value: `${sender.channel} ${sender.handle} (not in customer records)`, source: "channel", tone: "warn" },
+      ],
+    };
+  }
+
+  const orders = sheet.senderOrders;
+  const count = orders.length;
+  const name = orders[0] ? firstName(orders[0]) : sender.displayName.split(" ")[0];
+  const orderIds = formatOrderIds(orders, signals.language);
+  const orderListSummary = orders
+    .map((o) => `#${o.id} (${itemsLabel(o)} · ${STATUS_LABEL[o.status]})`)
+    .join("; ");
+
+  const facts: Fact[] = [
+    { label: "Verified customer", value: `${sender.displayName} (${sender.channel} ${sender.handle})`, source: "customer", tone: "ok" },
+    { label: "Orders on file", value: `${count} ${plural(count, "order", "orders")}`, source: "orders", tone: count > 0 ? "ok" : "neutral" },
+  ];
+  for (const o of orders) {
+    facts.push(orderFact(o));
+  }
+
+  return {
+    rule: "R6",
+    brief: brief(
+      "orders_list",
+      "resolve",
+      count === 1 ? "1 order found" : `${count} orders found`,
+      {
+        name,
+        orderCount: count,
+        orderIds,
+        orderNumbers: orders.map((o) => o.id),
+        summary: orderListSummary,
+      },
+    ),
+    summary: `The requester is the verified account owner (${sender.channel} ${sender.handle} → customer #${sender.customerId}). Rule R6: disclose the customer's ${count} order(s) on file.`,
+    facts,
+    actions: [
+      {
+        kind: "disclosure_log",
+        label: count > 0 ? "Order list shared" : "Order history checked",
+        detail: count > 0 ? `${count} orders (${orderIds}) disclosed to ${sender.channel} ${sender.handle}` : `0 orders on file for ${sender.channel} ${sender.handle}`,
+      },
+    ],
+  };
+}
+
+function productsPath(sheet: FactSheet, signals: Signals): PathResult {
+  const products = sheet.products ?? [];
+  const stockLabel = (stock?: number) => (stock === undefined ? "stock not tracked" : stock > 0 ? `${stock} in stock` : "out of stock");
+  return {
+    rule: "R6",
+    brief: brief("products_list", "resolve", products.length ? `${products.length} products found` : "No matching products", {
+      category: signals.product,
+      priceCap: signals.priceCap,
+      count: products.length,
+      items: products.map((p) => `${p.name} — €${p.price.toFixed(2)}`),
+      stock: products.map((p) => (p.stock === undefined ? "unknown" : p.stock > 0 ? "in" : "out")),
+    }),
+    summary: `Product question. The catalog is shop data, not personal data, so anyone may see it. Rule R6: answer from the products table${signals.product ? ` (category: ${signals.product})` : ""}${signals.priceCap ? `, up to €${signals.priceCap}` : ""}.`,
+    facts: products.length
+      ? products.map((p) => ({ label: p.name, value: `€${p.price.toFixed(2)} · ${stockLabel(p.stock)}`, source: "catalog" as const }))
+      : [{ label: "Catalog", value: "No product matches the question", source: "catalog", tone: "warn" }],
+  };
+}
+
+/** No fixed path fits: the tool-using agent answers from records and policy, or hands off. */
+function orderChangePath(sheet: FactSheet, sender: Sender, agent: boolean): PathResult {
+  const order = sheet.order;
+  const facts = order && sheet.identity?.verified ? [orderFact(order)] : [];
+  if (agent) {
+    return agentPath(
+      "The customer wants to change an order. The agent's tools check in code that the writer owns it, that it hasn't shipped and how it was paid before changing anything; everything else goes to staff.",
+      facts,
+    );
+  }
+  return {
+    rule: "R5",
+    brief: brief("escalate_review", "escalate", "Order change → staff", { slaHours: OPS.standardSlaHours }),
+    summary: "The customer wants to change an order. Without the agent only staff change orders. Rule R5: escalate.",
+    facts,
+    handoff: handoff(
+      "normal",
+      `${sender.displayName} (${sender.channel} ${sender.handle}) wants to change ${order ? `order #${order.id}` : "an order"}. Check its status and payment, then update it.`,
+    ),
+  };
+}
+
+function openQuestionPath(): PathResult {
+  return {
+    rule: "R6",
+    brief: brief("open_question", "resolve", "Answered by the agent", { slaHours: OPS.standardSlaHours }),
+    summary:
+      "No fixed path matches this message. The agent may answer it, but only with facts its tools return (the sender's own records, the catalog, the written policy); otherwise it hands the message to a person.",
+    facts: [],
+  };
+}
+
+export interface DecideOptions {
+  /**
+   * A tool-using agent is available. It gets the first try at everything except
+   * what only a person can do: faulty items (warranty = staff), courier failures,
+   * disputed deliveries and topics with no written policy. Anger and repeat
+   * contact no longer hand off by themselves; the agent handles them with
+   * priority. Unrecognised questions go to the agent too.
+   */
+  agent?: boolean;
+}
+
 // ---- entry point -----------------------------------------------------------
 
-export function decide(signals: Signals, sheet: FactSheet, sender: Sender): RulesOutcome {
+export function decide(signals: Signals, sheet: FactSheet, sender: Sender, opts: DecideOptions = {}): RulesOutcome {
   const checks: RuleCheck[] = [];
   const book = sheet.policies;
   const facts: Fact[] = [
@@ -616,19 +789,23 @@ export function decide(signals: Signals, sheet: FactSheet, sender: Sender): Rule
       tone: history.unanswered ? "bad" : "neutral",
     });
   }
-  const r1 = r1Reasons.length > 0;
+  const moodHit = r1Reasons.length > 0;
+  // With an agent, an upset or repeat customer gets a real fix first (trace, voucher,
+  // answer); the agent hands off as urgent only if it can't solve it.
+  const r1 = moodHit && !opts.agent;
   checks.push({
     id: "R1",
-    title: RULES.R1.title,
-    status: r1 ? "fired" : "passed",
+    title: opts.agent ? "Anger or repeat contact → agent fixes it first, urgent if handed off" : RULES.R1.title,
+    status: moodHit ? "fired" : "passed",
     decision: r1 ? "escalate" : undefined,
-    detail: r1 ? r1Reasons.join(" · ") : "No anger markers, no repeat-contact phrases, contact log clean",
+    detail: moodHit ? r1Reasons.join(" · ") : "No anger markers, no repeat-contact phrases, contact log clean",
   });
 
   // R2 — policy coverage, straight from the policies table
   const intent = signals.intent.value;
   const needed = requiredTopic(intent, signals.topic.topicId);
-  const r2 = signals.policyGap.hit || (needed !== null && !covers(book, needed)) || (intent === "other" && !signals.topic.hit);
+  const openQuestion = intent === "other" && !signals.topic.hit;
+  const r2 = signals.policyGap.hit || (needed !== null && !covers(book, needed)) || (openQuestion && !opts.agent);
   const gapTopic = r2 ? topicInfo(signals.policyGap.topicId ?? needed ?? undefined) : undefined;
   checks.push({
     id: "R2",
@@ -641,7 +818,11 @@ export function decide(signals: Signals, sheet: FactSheet, sender: Sender): Rule
         : "The request doesn't map to any written policy"
       : needed
         ? `Covered by the “${needed}” policy: ${policyText(book, needed)}`
-        : "Conversation — no policy needed",
+        : openQuestion
+          ? "No fixed topic — the agent may answer from records and written policy only"
+          : intent === "product_search"
+            ? "Catalog question — shop data, no policy needed"
+            : "Conversation — no policy needed",
   });
   if (r2) {
     facts.push({
@@ -654,7 +835,7 @@ export function decide(signals: Signals, sheet: FactSheet, sender: Sender): Rule
 
   // R3 — personal data (evaluated inside the PII path, reported here)
   const wantsPii = signals.personalData.hit;
-  const ownerGated = ["order_status", "return_request", "product_fault"].includes(intent) && Boolean(sheet.order);
+  const ownerGated = ["order_status", "order_list", "return_request", "product_fault", "order_change"].includes(intent) && Boolean(sheet.order);
 
   let path: PathResult;
   if (r1) {
@@ -703,20 +884,26 @@ export function decide(signals: Signals, sheet: FactSheet, sender: Sender): Rule
         "Support team",
       ),
     };
-  } else if (wantsPii) {
+  } else if (wantsPii && intent !== "order_change") {
     path = personalDataPath(sheet, signals, sender);
   } else if (ownerGated && orderOwnerGate(sheet, signals, sender)) {
     path = orderOwnerGate(sheet, signals, sender)!;
   } else {
     switch (intent) {
       case "order_status":
-        path = orderStatusPath(sheet, signals, sender);
+        path = orderStatusPath(sheet, signals, sender, opts.agent);
+        break;
+      case "order_list":
+        path = orderListPath(sheet, signals, sender);
         break;
       case "return_request":
         path = returnPath(sheet, signals, sender);
         break;
       case "product_fault":
         path = faultPath(sheet, signals, sender);
+        break;
+      case "order_change":
+        path = orderChangePath(sheet, sender, Boolean(opts.agent));
         break;
       case "delivery_info": {
         const d = book.delivery;
@@ -730,6 +917,12 @@ export function decide(signals: Signals, sheet: FactSheet, sender: Sender): Rule
           : unreadablePolicy("delivery", sender);
         break;
       }
+      case "product_search":
+        path = productsPath(sheet, signals);
+        break;
+      case "other":
+        path = needed ? (opts.agent ? agentPath(`Covered by the “${needed}” policy; the agent answers from it.`, []) : policyQuotePath(sheet, needed)) : openQuestionPath();
+        break;
       case "small_talk":
         path = {
           rule: "R6",
@@ -747,7 +940,7 @@ export function decide(signals: Signals, sheet: FactSheet, sender: Sender): Rule
   }
 
   // Report R3–R6 in the checklist.
-  const needsOwner = wantsPii || ownerGated;
+  const needsOwner = wantsPii || ownerGated || intent === "order_list";
   const r3Status: RuleCheck["status"] = !needsOwner ? "not_applicable" : path.rule === "R3" ? "fired" : r1 || r2 ? "not_applicable" : "passed";
   checks.push({
     id: "R3",
@@ -759,7 +952,7 @@ export function decide(signals: Signals, sheet: FactSheet, sender: Sender): Rule
       : r3Status === "fired"
         ? "Requester is not the verified buyer → order details withheld"
         : r3Status === "passed"
-          ? `Requester verified as the buyer of #${sheet.order?.id}`
+          ? (intent === "order_list" ? `Requester verified as account owner (${sender.displayName})` : `Requester verified as the buyer of #${sheet.order?.id}`)
           : "Order details requested — withheld (already escalated)",
   });
   const r4 = path.rule === "R4";
@@ -824,5 +1017,10 @@ export function decide(signals: Signals, sheet: FactSheet, sender: Sender): Rule
     withheld,
     handoff: path.handoff,
     summary: path.summary,
+    mood: {
+      upset: signals.frustration.hit,
+      repeat: signals.repeat.hit || repeatFromLog || repeatFromSession,
+      evidence: r1Reasons,
+    },
   };
 }

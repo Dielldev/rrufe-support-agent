@@ -16,6 +16,9 @@ if (mode === "reset" && exists) {
 if (mode === "reset" || !exists) {
   await client.executeMultiple(sql("schema.sql"));
   await client.executeMultiple(sql("seed.sql"));
+  await client.executeMultiple(sql("extensions.sql"));
+  const version = Number(readFileSync(new URL("../lib/db/client.ts", import.meta.url), "utf8").match(/const SCHEMA_VERSION = (\d+);/)?.[1] ?? 1);
+  await client.execute(`PRAGMA user_version = ${version}`);
   console.log(`Loaded schema + seed into ${url.replace(/\/\/.*@/, "//")}`);
 } else {
   console.log(`${url} already has data — use npm run db:reset to rebuild it.`);

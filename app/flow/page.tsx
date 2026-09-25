@@ -17,7 +17,7 @@ export default async function FlowPage() {
     SCENARIOS.map(async (scenario) => {
       const input = { text: scenario.text, sender: (await resolveSender(scenario.senderId))!, thread: [] };
       const [standard, stress] = await Promise.all([
-        runPipeline(input, { proposer: null, phraser: null }),
+        runPipeline(input, { proposer: null, phraser: null, agent: null, allowFallback: true }),
         runPipeline(input, depsForMode("stress")),
       ]);
       return { scenario, sender: input.sender, standard, stress };

@@ -82,7 +82,36 @@ function warrantyNote(p: Params, pr: { plural: boolean }, lang: Language): strin
   return "";
 }
 
+const escalateNoPolicy: Record<Language, Render> = {
+  en: (p) =>
+    `Thanks for your message. I want to make sure you get the right answer, so I've passed it to a colleague who will reply within ${s(p.slaHours)} hours.`,
+  sq: (p) =>
+    `Faleminderit për mesazhin. Dua të sigurohem që të merrni përgjigjen e duhur, prandaj ia kalova një kolegu, i cili do t'ju përgjigjet brenda ${s(p.slaHours)} orëve.`,
+};
+
+function productLines(p: Params, lang: Language): string {
+  const items = (p.items as string[]) ?? [];
+  const stock = (p.stock as string[]) ?? [];
+  const label = (st: string) =>
+    lang === "en"
+      ? st === "in" ? "in stock" : st === "out" ? "out of stock" : "ask us about stock"
+      : st === "in" ? "në stok" : st === "out" ? "pa stok" : "pyetni për stokun";
+  return items.map((it, i) => `${it} (${label(stock[i] ?? "unknown")})`).join("; ");
+}
+
 const TEMPLATES: Record<BriefKind, Record<Language, Render>> = {
+  products_list: {
+    en: (p) =>
+      n(p.count) === 0
+        ? "I couldn't find a product matching that in our catalog. Tell me the brand or type you're after and I'll check again."
+        : `Here's what we have${p.priceCap ? ` up to €${s(p.priceCap)}` : ""}: ${productLines(p, "en")}.`,
+    sq: (p) =>
+      n(p.count) === 0
+        ? "Nuk gjeta asnjë produkt që përputhet në katalogun tonë. Më tregoni markën ose llojin që kërkoni dhe do ta kontrolloj sërish."
+        : `Ja çfarë kemi${p.priceCap ? ` deri në €${s(p.priceCap)}` : ""}: ${productLines(p, "sq")}.`,
+  },
+  // Only ever sent if the agent can't answer; the pipeline turns it into a handoff first.
+  open_question: escalateNoPolicy,
   order_late: {
     en: (p) =>
       `${hi(p, "en")}I'm sorry — order #${s(p.orderId)} was due by ${day(p.expectedBy, "en")} at the latest (our delivery time is ${windowEn(p)}), so it is now ${n(p.daysLate)} day${n(p.daysLate) === 1 ? "" : "s"} late. It's on its way with ${s(p.carrier)} (last courier update: ${day(p.lastUpdate, "en")}). I've opened a priority trace with the courier (${s(p.traceId)}) and we'll let you know as soon as they reply.`,
@@ -100,6 +129,28 @@ const TEMPLATES: Record<BriefKind, Record<Language, Render>> = {
       `${hi(p, "en")}Order #${s(p.orderId)} was delivered ${ago(n(p.deliveredDays), "en")}. If you can't find it, reply here and we'll check the delivery with the courier.`,
     sq: (p) =>
       `${hi(p, "sq")}Porosia #${s(p.orderId)} është dorëzuar ${ago(n(p.deliveredDays), "sq")}. Nëse nuk e gjeni, na shkruani këtu dhe do ta verifikojmë dorëzimin me korrierin.`,
+  },
+  orders_list: {
+    en: (p) => {
+      const count = n(p.orderCount);
+      if (count === 0) {
+        return `${hi(p, "en")}You currently have no orders on file under your account. If you placed an order under a different email or phone number, let us know and we'll check it for you.`;
+      }
+      if (count === 1) {
+        return `${hi(p, "en")}You have 1 order on file: ${s(p.orderIds)}. You can see the details below.`;
+      }
+      return `${hi(p, "en")}You have ${count} orders on file: ${s(p.orderIds)}. You can see the details below.`;
+    },
+    sq: (p) => {
+      const count = n(p.orderCount);
+      if (count === 0) {
+        return `${hi(p, "sq")}Aktualisht nuk keni asnjë porosi të regjistruar në llogarinë tuaj. Nëse keni porositur me një email ose numër tjetër, na tregoni dhe do ta kontrollojmë për ju.`;
+      }
+      if (count === 1) {
+        return `${hi(p, "sq")}Keni 1 porosi të regjistruar në sistem: ${s(p.orderIds)}. Detajet i gjeni më poshtë.`;
+      }
+      return `${hi(p, "sq")}Keni ${count} porosi të regjistruara në sistem: ${s(p.orderIds)}. Detajet i gjeni më poshtë.`;
+    },
   },
   return_declined: {
     en: (p) => {
@@ -231,12 +282,7 @@ const TEMPLATES: Record<BriefKind, Record<Language, Render>> = {
     sq: (p) =>
       `Faleminderit për pyetjen! Për ${topic(p)?.sq ?? "këtë çështje"} nuk mund t'ju jap përgjigje vetë, prandaj pyetjen tuaj ia kalova një kolegu, i cili do t'ju përgjigjet brenda ${s(p.slaHours)} orëve.`,
   },
-  escalate_no_policy: {
-    en: (p) =>
-      `Thanks for your message. I want to make sure you get the right answer, so I've passed it to a colleague who will reply within ${s(p.slaHours)} hours.`,
-    sq: (p) =>
-      `Faleminderit për mesazhin. Dua të sigurohem që të merrni përgjigjen e duhur, prandaj ia kalova një kolegu, i cili do t'ju përgjigjet brenda ${s(p.slaHours)} orëve.`,
-  },
+  escalate_no_policy: escalateNoPolicy,
   escalate_policy_limit: {
     en: (p) =>
       `${hi(p, "en")}I'm sorry — order #${s(p.orderId)} was due by ${day(p.expectedBy, "en")} and still hasn't reached you. I've passed it to a colleague as a priority; they'll contact you within ${s(p.slaHours)} hours to agree the next step with you.`,
@@ -258,6 +304,10 @@ const TEMPLATES: Record<BriefKind, Record<Language, Render>> = {
       p.variant === "thanks"
         ? "S'ka përse! Nëse keni nevojë për diçka tjetër me një porosi, na shkruani këtu."
         : `Përshëndetje! Jam asistenti i mbështetjes së ${OPS.shopName}. Mund ${canHelp(p, "sq")}. Si mund t'ju ndihmoj?`,
+  },
+  busy_retry: {
+    en: () => "Sorry, I couldn't get to your message just now. Please send it again in a minute and I'll answer right away.",
+    sq: () => "Na vjen keq, nuk arrita ta shqyrtoj mesazhin tuaj tani. Ju lutem dërgojeni sërish pas një minute dhe do t'ju përgjigjem menjëherë.",
   },
   escalate_review: {
     en: (p) =>

@@ -5,7 +5,7 @@ import { useEffect, useMemo } from "react";
 import { BotIcon, ChevronRightIcon, SparkIcon } from "../icons";
 import { useChat } from "../shell/ChatProvider";
 import { Composer } from "./Composer";
-import { AgentMessage, ErrorMessage, TypingMessage, UserMessage } from "./Messages";
+import { AgentMessage, ErrorMessage, ThinkingMessage, UserMessage } from "./Messages";
 import { getQuestions } from "./questions";
 
 export function ChatHome() {
@@ -87,11 +87,11 @@ function Conversation() {
             <div key={ex.id} className="space-y-5">
               <UserMessage text={ex.text} sender={sender} />
               {ex.result ? (
-                <AgentMessage result={ex.result} mode={ex.mode} />
+                <AgentMessage result={ex.result} mode={ex.mode} steps={ex.steps} elapsedMs={ex.elapsedMs} />
               ) : ex.error ? (
                 <ErrorMessage error={ex.error} />
               ) : (
-                <TypingMessage />
+                <ThinkingMessage steps={ex.steps ?? []} partial={ex.partial} startedAt={ex.startedAt} />
               )}
             </div>
           );

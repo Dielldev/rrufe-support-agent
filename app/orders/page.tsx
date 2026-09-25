@@ -5,6 +5,7 @@ import { connection } from "next/server";
 import { PageHeader } from "@/components/console/ui";
 import { ChannelIcon } from "@/components/icons";
 import { OrderCustomerBanner } from "@/components/orders/OrderCustomerBanner";
+import { ProductThumbs } from "@/components/orders/ProductThumbs";
 import { shopRecords } from "@/lib/display";
 import { shopNow } from "@/lib/shop/operations";
 
@@ -83,9 +84,14 @@ export default async function OrdersPage({
             {orders.map((o) => (
               <tr key={o.id} className="align-top hover:bg-sunken/60">
                 <td className="px-4 py-3 font-mono font-medium text-ink">#{o.id}</td>
-                <td className="px-4 py-3 text-ink">
-                  <div>{o.items}</div>
-                  <div className="text-xs text-muted tabular-nums">€{o.total.toFixed(2)}</div>
+                <td className="min-w-64 px-4 py-3 text-ink">
+                  <div className="flex items-start gap-3">
+                    <ProductThumbs images={o.images} size={40} />
+                    <div>
+                      <div>{o.items}</div>
+                      <div className="text-xs text-muted tabular-nums">€{o.total.toFixed(2)}</div>
+                    </div>
+                  </div>
                 </td>
                 <td className="px-4 py-3">
                   <div className="text-ink">{o.buyer.name}</div>

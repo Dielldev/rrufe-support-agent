@@ -62,7 +62,20 @@ export function getQuestions(customer?: CustomerPersona, activeSenderId?: string
     ? `Cila është adresa e dërgesës për porosinë #${buyerOrderId}?`
     : `What's the address on order #${buyerOrderId}?`;
 
+  // 7. Check my orders: inquiry about all customer orders
+  const ordersListText = isSq
+    ? "A mund të kontrolloni sa porosi kam?"
+    : "Can you check how many orders I have?";
+
   return [
+    {
+      id: "orders-list",
+      title: "Check my orders",
+      text: ordersListText,
+      senderId: mySenderId,
+      icon: CardIcon,
+      tint: "bg-[#edf5ff] text-[#0066cc]",
+    },
     {
       id: "late-order",
       title: "Late delivery",

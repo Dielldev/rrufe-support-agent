@@ -28,7 +28,10 @@ export const DECISION_LABEL: Record<Decision, string> = {
 
 export const INTENTS = [
   "order_status",
+  "order_list",
+  "product_search",
   "return_request",
+  "order_change",
   "product_fault",
   "personal_data_request",
   "store_info",
@@ -67,12 +70,19 @@ export interface ThreadMessage {
   senderId: string;
   text: string;
   decision?: Decision;
+  /**
+   * The assistant's reply to this message, so the agent can follow the
+   * conversation. Client-held context: it is never treated as a verified fact.
+   */
+  reply?: string;
 }
 
 export interface Detection {
   hit: boolean;
   evidence: string[];
 }
+
+export type OrderChangeKind = "address" | "remove_item" | "cancel" | "general";
 
 export interface Signals {
   language: Language;
@@ -92,8 +102,11 @@ export interface Signals {
   policyGap: Detection & { topicId?: string };
   /** Order number mentioned earlier in this conversation by the same sender. */
   contextOrderId?: string;
+  /** "under €100", "nën 100 euro": a price ceiling for a product search. */
+  priceCap?: number;
   /** Says a delivered parcel can't be found / wasn't received. */
   reportsMissing: boolean;
+  orderChange: Detection & { kinds: OrderChangeKind[] };
   smallTalk?: "greeting" | "thanks" | "help";
   intent: { value: Intent; evidence: string[] };
 }
@@ -104,7 +117,8 @@ export type FactSource =
   | "policy"
   | "computed"
   | "customer"
-  | "channel";
+  | "channel"
+  | "catalog";
 
 export type Tone = "ok" | "warn" | "bad" | "neutral";
 
@@ -126,7 +140,7 @@ export interface RuleCheck {
 }
 
 export interface Action {
-  kind: "carrier_trace" | "handoff" | "withheld" | "disclosure_log" | "ticket_note";
+  kind: "carrier_trace" | "handoff" | "withheld" | "disclosure_log" | "ticket_note" | "voucher" | "order_change";
   label: string;
   detail: string;
 }
@@ -149,6 +163,9 @@ export type BriefKind =
   | "order_on_time"
   | "order_late"
   | "order_delivered"
+  | "orders_list"
+  | "products_list"
+  | "open_question"
   | "return_declined"
   | "return_eligible"
   | "return_info"
@@ -169,7 +186,8 @@ export type BriefKind =
   | "escalate_policy_limit"
   | "escalate_review"
   | "escalate_missing_parcel"
-  | "conversation";
+  | "conversation"
+  | "busy_retry";
 
 export type BriefValue = string | number | boolean | string[] | undefined;
 
@@ -202,6 +220,7 @@ export interface ProposalView {
 
 export type GuardOutcome =
   | "rules_only"
+  | "advisory"
   | "agreed"
   | "overridden"
   | "tightened"
@@ -217,12 +236,22 @@ export interface GuardView {
 }
 
 export interface ValidationIssue {
-  check: "pii_leak" | "unapproved_number" | "changes_decision" | "new_commitment" | "wrong_language" | "missing_fact" | "length" | "model_error";
+  check:
+    | "pii_leak"
+    | "unapproved_number"
+    | "changes_decision"
+    | "new_commitment"
+    | "wrong_language"
+    | "missing_fact"
+    | "length"
+    | "model_error"
+    | "internal_leak";
   detail: string;
 }
 
 export interface PhrasingView {
-  engine: "model" | "template";
+  /** "agent": the tool-using agent wrote the reply; it went through the same output checks. */
+  engine: "model" | "template" | "agent";
   phraser?: string;
   /** Model draft that failed validation and was thrown away. */
   rejectedDraft?: string;
@@ -230,11 +259,94 @@ export interface PhrasingView {
   latencyMs?: number;
 }
 
+export type OrderStatus = "pending" | "processing" | "shipped" | "delivered" | "cancelled" | "returned";
+
+export interface ProductImage {
+  name: string;
+  url: string;
+}
+
+export interface OrderCardData {
+  id: string;
+  items: string;
+  images: ProductImage[];
+  total: number;
+  status: OrderStatus;
+  carrier?: string;
+  tracking?: string;
+  expectedBy?: string;
+  placedDaysAgo: number;
+  deliveredDaysAgo?: number;
+  placedOn?: string;
+  shippedOn?: string;
+  deliveredOn?: string;
+}
+
+/** A delay voucher shown as a reward card. The code comes from the vouchers table. */
+export type VoucherKind = "percent" | "free_shipping" | "gift_card";
+
+export interface VoucherCardData {
+  code: string;
+  kind: VoucherKind;
+  percent?: number;
+  amountEur?: number;
+  orderId: string;
+  /** YYYY-MM-DD */
+  expiresOn: string;
+  /** True when the order already had a voucher and the existing one was shown again. */
+  alreadyIssued: boolean;
+}
+
+/** Live progress while a message is being handled (streamed to the chat). */
+export type ProgressEvent =
+  | { type: "step"; id: string; label: string; status: "active" | "done" | "blocked" | "failed" }
+  /** Reply text that already passed the output checks, sentence by sentence. */
+  | { type: "text"; delta: string }
+  /** Throw away the streamed text (the agent went on to call tools, or is rewriting). */
+  | { type: "text-reset" };
+
+// ---- agent -------------------------------------------------------------------
+
+/**
+ * What a tool call was allowed to do. "granted" = the requester's own data,
+ * "public" = shop catalog / policy, "denied" = the requester isn't entitled to it,
+ * "action" = a side effect the code allowed, "refused" = an action whose
+ * preconditions (checked in code) weren't met.
+ */
+export type ToolAccess = "granted" | "public" | "denied" | "action" | "refused" | "error";
+
+export interface ToolTrace {
+  tool: string;
+  input: Record<string, unknown>;
+  access: ToolAccess;
+  /** One line for the Why panel; never contains another person's data. */
+  summary: string;
+  latencyMs: number;
+}
+
+/** How much customer data this conversation can reach, decided by code before the agent runs. */
+export type AccessScope = "account" | "per_order" | "public";
+
+export interface AgentView {
+  model: string;
+  scope: { level: AccessScope; note: string };
+  toolCalls: ToolTrace[];
+  steps: number;
+  latencyMs: number;
+  /** True when the first reply failed the output checks and the agent rewrote it. */
+  repaired: boolean;
+  /** The reply that failed the output checks (first attempt), if any. */
+  rejectedDraft?: string;
+  issues: ValidationIssue[];
+}
+
 export interface TriageResult {
   id: string;
   decision: Decision;
   reply: { text: string; language: Language };
   outcome: string;
+  orders?: OrderCardData[];
+  vouchers?: VoucherCardData[];
   why: {
     summary: string;
     firedRule: { id: RuleId; title: string };
@@ -248,13 +360,15 @@ export interface TriageResult {
     handoff?: Handoff;
     phrasing: PhrasingView;
   };
+  /** Present when the tool-using agent wrote the reply. */
+  agent?: AgentView;
   /** What the audit log needs: the topic and the order the facts came from (only when it exists in the records). */
   intent: Intent;
   orderId?: string;
-  engines: { decision: string; phrasing: string };
+  engines: { decision: string; phrasing: string; agent?: string };
   /** Set by the API when the message and decision were written to conversations / agent_log. */
   audit?: { convId: number } | { error: string };
-  timings: { totalMs: number };
+  timings: { totalMs: number; classifierMs?: number; agentMs?: number };
 }
 
 export type RunMode = "standard" | "stress";

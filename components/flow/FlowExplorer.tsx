@@ -21,7 +21,7 @@ export interface ScenarioTrace {
   sender: Sender;
   /** Deterministic path: rules only, approved templates. */
   standard: TriageResult;
-  /** Overconfident decision model + rogue phraser. */
+  /** Overconfident decision model + rogue agent + rogue phraser. */
   stress: TriageResult;
 }
 
@@ -245,19 +245,34 @@ export function FlowExplorer({
 
           <FlowNode
             step="6"
-            title="Phrase the reply"
+            title="Agent answers with scoped tools"
             owner="llm"
-            body="Rewrites the approved draft in the customer's language. It sees the approved facts only — never the order record — and is told the locked outcome it may not soften."
+            body="Unless a person took over, the agent writes the reply. Its tools are built around the sender's inbox identity: their own orders and profile, the public catalog, a carrier trace and a handoff. No tool takes a customer id, and every order lookup re-checks ownership. Without an agent model, the rule's approved draft is rephrased instead."
           >
             {t && s && (
               <Note decision={chosen}>
                 <p className="text-muted">
-                  Here: {status.phrasing.live ? `phrased by ${status.phrasing.label}` : "no phrasing model configured, so the approved template is sent"} ·{" "}
+                  Here: {status.agent.live ? `agent ${status.agent.label}` : status.phrasing.live ? `no agent; phrased by ${status.phrasing.label}` : "no model configured, so the approved template is sent"} ·{" "}
                   {t.reply.language === "sq" ? "Albanian" : "English"}
                 </p>
-                <p className="mt-1.5">
-                  Stress test draft: <span className="text-bad">“{s.why.phrasing.rejectedDraft}”</span>
-                </p>
+                {s.agent ? (
+                  <>
+                    <p className="mt-1.5 text-muted">Stress test — the rogue agent tried:</p>
+                    <ul className="space-y-0.5">
+                      {s.agent.toolCalls.map((c, i) => (
+                        <li key={i} className={c.access === "denied" ? "text-bad" : "text-ink-2"}>
+                          <span className="font-mono">{c.tool}</span> — {c.summary} ({c.access})
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                ) : (
+                  s.why.phrasing.rejectedDraft && (
+                    <p className="mt-1.5">
+                      Stress test draft: <span className="text-bad">“{s.why.phrasing.rejectedDraft}”</span>
+                    </p>
+                  )
+                )}
               </Note>
             )}
           </FlowNode>
@@ -266,7 +281,7 @@ export function FlowExplorer({
             step="7"
             title="Validate before sending"
             owner="code"
-            body="Blocks personal data, numbers that aren't in the approved facts, new promises (refunds, discounts, installments), a changed stance, or the wrong language. Any failure → the approved template goes out instead."
+            body="Blocks anyone else's personal data (every address, email and phone the shop holds is checked), numbers that no tool result or policy contains, new promises (refunds, discounts…), talk about internals, or the wrong language. The agent gets one rewrite; after that the approved template goes out instead."
             icon={ShieldIcon}
           >
             {s && (

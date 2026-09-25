@@ -30,7 +30,10 @@ export interface MergeResult {
 
 const INTENT_LABEL: Record<Intent, string> = {
   order_status: "Order status",
+  order_list: "Order list",
+  product_search: "Product search",
   return_request: "Return request",
+  order_change: "Order change",
   product_fault: "Product fault",
   personal_data_request: "Personal data request",
   store_info: "Store info",
@@ -100,7 +103,7 @@ export function mergeSignals(rules: Signals, proposal: ProposalView | null): Mer
         fields: ["address", "phone", "email"],
         evidence: [`${name}: asks for personal data (${pct(f.wants_personal_data)})`],
       };
-      merged.intent = { value: "personal_data_request", evidence: merged.personalData.evidence };
+      if (merged.intent.value !== "order_change") merged.intent = { value: "personal_data_request", evidence: merged.personalData.evidence };
     }
   }
 
@@ -142,8 +145,30 @@ export interface GuardResult {
  * Lock the decision. The rules outcome is the floor; a model may only move it
  * toward a stricter option. It can never loosen it.
  */
-export function guard(rules: RulesOutcome, proposal: ProposalView | null, conflict?: MergeResult["conflict"]): GuardResult {
+export function guard(
+  rules: RulesOutcome,
+  proposal: ProposalView | null,
+  conflict?: MergeResult["conflict"],
+  opts: { advisory?: boolean } = {},
+): GuardResult {
   const base = { rulesDecision: rules.decision };
+  if (opts.advisory && proposal?.ok && proposal.decision) {
+    // Agent mode: the agent does the work and its tools decide what needs a person.
+    // The classifier's risk flags were already merged into the signals (third party,
+    // personal data, mood); its decision guess alone no longer sends anyone to staff.
+    const p = proposal.decision;
+    return {
+      view: {
+        ...base,
+        proposedDecision: p.value,
+        final: rules.decision,
+        outcome: "advisory",
+        note: `${proposal.name} suggested “${p.value.replaceAll("_", " ")}” (${pct(p.probability)}). With the agent on, that guess is advisory: its risk flags still count, but only the rules and the agent's own tool calls can hand a message to a person.${conflict ? ` (The readers also disagreed on the topic: ${conflict.rules.replaceAll("_", " ")} vs ${conflict.jev.replaceAll("_", " ")}.)` : ""}`,
+      },
+      brief: rules.brief,
+      handoff: rules.handoff,
+    };
+  }
   if (!proposal) {
     return {
       view: { ...base, final: rules.decision, outcome: "rules_only", note: "No decision model configured — the deterministic rules decided alone." },

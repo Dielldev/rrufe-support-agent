@@ -11,8 +11,11 @@ import { DECISIONS, INTENTS, type ProposalView } from "./types";
  * bounded, and it goes through the same guard: it can only add caution.
  */
 
-export const DEFAULT_GROQ_MODEL = "openai/gpt-oss-120b";
-/** Groq rate limits are per model, so phrasing uses a second model to double the budget. */
+/**
+ * Groq rate limits are per model. The agent (the heavy user) gets openai/gpt-oss-120b
+ * to itself; the classifier and the phrasing model share the smaller one.
+ */
+export const DEFAULT_GROQ_MODEL = "openai/gpt-oss-20b";
 export const DEFAULT_GROQ_PHRASING_MODEL = "openai/gpt-oss-20b";
 
 export function groqConfigured(): boolean {

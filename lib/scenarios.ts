@@ -52,7 +52,7 @@ export const SCENARIOS: Scenario[] = [
     title: "Installments?",
     senderId: "instagram:@ardit.morina",
     text: "A mund ta blej laptopin me këste?",
-    expected: "escalate",
-    challenge: "No policy exists → never guess",
+    expected: "resolve",
+    challenge: "Answered only from the installments policy on file",
   },
 ];

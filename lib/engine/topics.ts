@@ -57,16 +57,6 @@ export const TOPIC_DETECTORS: TopicDetector[] = [
     examples: ["bulk", "wholesale", "faturë për biznes"],
     re: rx(String.raw`\b(bulk|wholesale|b2b|company invoice|vat invoice|fak?tur\w* (?:p[eë]r|me) (?:biznes|kompani|tvsh)|shumic\w*)\b`),
   },
-  {
-    id: "product_advice",
-    label: "Product advice / stock",
-    en: "product recommendations and stock",
-    sq: "këshillat për produkte dhe gjendjen në stok",
-    examples: ["which models do you have", "a keni në stok"],
-    re: rx(
-      String.raw`\b(which (?:models?|laptops?|phones?|headphones?) (?:do you have|would you recommend|should i)|do you have (?:any|the) \w+ in stock|in stock|recommend (?:a|me)|looking for a (?:laptop|phone|headphones?|charger)|a keni n[eë] stok|n[eë] stok|[çc]far[eë] (?:laptop\w*|telefon\w*|modele) keni|m[eë] rekomando\w*)\b`,
-    ),
-  },
 ];
 
 /** Topics that come from an intent rather than a keyword detector. */
@@ -78,8 +68,12 @@ const INTENT_TOPICS: Record<string, TopicInfo> = {
 /** Which policy topic has to exist before the agent may answer an intent. `null` = no policy needed. */
 export const POLICY_FOR_INTENT: Record<Intent, string | null> = {
   order_status: "delivery",
+  order_list: "privacy",
+  // The catalog is shop data, not policy: any sender may ask about products.
+  product_search: null,
   delivery_info: "delivery",
   return_request: "returns",
+  order_change: "order_changes",
   product_fault: "warranty",
   personal_data_request: "privacy",
   store_info: "store",

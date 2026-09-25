@@ -1,4 +1,13 @@
-import { contactLog, findOrder, handleMatchesBuyer, ordersOfCustomer, type ContactLogEntry, type Order } from "@/lib/db/repo";
+import {
+  contactLog,
+  findOrder,
+  handleMatchesBuyer,
+  ordersOfCustomer,
+  searchProducts,
+  type ContactLogEntry,
+  type Order,
+  type Product,
+} from "@/lib/db/repo";
 import type { PolicyBook } from "@/lib/shop/policies";
 import { SHOP_TIME_ZONE } from "@/lib/shop/operations";
 import { calendarDay, normEmail, normPhone } from "./text";
@@ -30,6 +39,8 @@ export interface FactSheet {
   orderMatch: OrderMatch;
   requestedOrderId?: string;
   senderOrders: Order[];
+  /** Catalog matches, looked up only for product questions. */
+  products?: Product[];
   identity?: IdentityCheck;
   history: {
     log: ContactLogEntry[];
@@ -56,7 +67,7 @@ export function checkIdentity(order: Order, sender: Sender, signals: Signals): I
     else if (channelPhone) method = "channel_phone";
     else if (channelEmail) method = "channel_email";
     else if (channelInstagram) method = "channel_instagram";
-    else if (statedEmailMatch && statedPhoneMatch) method = "stated_email_and_phone";
+    else if (statedEmailMatch && statedPhoneMatch && !sender.customerId) method = "stated_email_and_phone";
   }
   return {
     verified: method !== undefined,
@@ -81,10 +92,12 @@ export async function gatherFacts(
 ): Promise<FactSheet> {
   const today = calendarDay(now, SHOP_TIME_ZONE);
   const requestedOrderId = signals.orderIds[0] ?? signals.contextOrderId;
-  const [senderOrders, log, requested] = await Promise.all([
+  const wantsProducts = signals.intent.value === "product_search";
+  const [senderOrders, log, requested, products] = await Promise.all([
     sender.customerId ? ordersOfCustomer(sender.customerId) : Promise.resolve([]),
     contactLog(sender, now, today),
     requestedOrderId ? findOrder(requestedOrderId) : Promise.resolve(undefined),
+    wantsProducts ? searchProducts({ category: signals.product, maxPrice: signals.priceCap, limit: 6 }) : Promise.resolve(undefined),
   ]);
 
   let order: Order | undefined;
@@ -113,6 +126,7 @@ export async function gatherFacts(
     orderMatch,
     requestedOrderId,
     senderOrders,
+    products,
     identity: order ? checkIdentity(order, sender, signals) : undefined,
     history: { log, unanswered: log.filter((e) => !e.answered).length, sessionUnresolved },
   };

@@ -22,7 +22,10 @@ type EvaluationModelInstance = Exclude<EvaluationModel, string>;
 
 const INTENT_CRITERIA: Record<Intent, string> = {
   order_status: "Where a placed order is, or why it hasn't arrived yet",
+  order_list: "Asking how many orders they have, to list their orders, or what orders are on their account",
+  product_search: "Asks about products the shop sells: which models, prices, availability or stock",
   return_request: "Wants to return an item or get money back for it",
+  order_change: "Wants to change an order they placed: a new delivery address, removing an item or lowering a quantity, or cancelling it",
   product_fault: "A purchased product is broken, faulty or needs repair / warranty service",
   personal_data_request: "Wants the shop to reveal or confirm the address, phone number or email on an order",
   store_info: "Store location, opening hours or how to reach the shop",
@@ -64,17 +67,17 @@ export const JEV_QUESTIONS = {
       "Given the verified facts and the shop policy, what should the support agent do with this message?",
     criteria: {
       resolve:
-        "Written policy plus verified facts fully answer it, and no personal data would go to anyone other than the verified buyer.",
+        "The shop's records, product catalog or written policy can answer it (or it's a general question the assistant can help with), and no personal data would go to anyone other than the verified owner.",
       request_verification:
         "The requester's identity or a missing order detail must be confirmed before anything can be shared or approved.",
       escalate:
-        "A person must handle it: the customer is upset or has written before, the policy doesn't cover the topic, or the case is unclear.",
+        "A person must handle it: the customer is upset or has written before, it asks about a topic the shop explicitly has no written policy for (installments, trade-ins, price matching, business orders), a faulty product, or a dispute.",
     },
   },
 } as const;
 
 const ESCALATION_POLICY =
-  "Upset or repeat customers, and any topic without a written policy, go to a human. The agent only states what the written policy says.";
+  "Upset or repeat customers, and topics the shop has no written policy for, go to a human. Otherwise an assistant with read access to the requester's own records, the product catalog and the written policy answers.";
 
 /**
  * State sent to Jev (and Groq). Deliberately contains no names, addresses, phones

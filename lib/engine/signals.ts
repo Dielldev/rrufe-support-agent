@@ -1,7 +1,7 @@
 import { covers, type PolicyBook } from "@/lib/shop/policies";
 import { detectLanguage, normalize, rx } from "./text";
 import { TOPIC_DETECTORS } from "./topics";
-import type { Detection, Intent, PiiField, ProductCategory, Signals } from "./types";
+import type { Detection, Intent, OrderChangeKind, PiiField, ProductCategory, Signals } from "./types";
 
 /*
  * Deterministic reading of the message. No model involved: every signal here
@@ -39,7 +39,7 @@ const OPENED = rx(
 // ---- frustration / repeat --------------------------------------------------
 
 const HOSTILE = rx(
-  String.raw`\b(ridiculous|unacceptable|scam|worst|terrible|disgusting|furious|angry|fed up|useless|incompetent|pathetic|never again|lawyer|sue you|shame on you|mashtrim\w*|mashtrues\w*|turp\w*|skandal\w*|papranueshm\w*|qesharak\w*|budalla\w*|nervozuar|jam i m[eë]rzitur|jam e m[eë]rzitur)\b`,
+  String.raw`\b(pissed(?: off)?|sick (?:and tired )?of|so annoyed|really annoyed|ridiculous|unacceptable|scam|worst|terrible|disgusting|furious|angry|fed up|useless|incompetent|pathetic|never again|lawyer|sue you|shame on you|mashtrim\w*|mashtrues\w*|turp\w*|skandal\w*|papranueshm\w*|qesharak\w*|budalla\w*|nervozuar|jam i m[eë]rzitur|jam e m[eë]rzitur)\b`,
 );
 const ACRONYMS = new Set(["HDMI", "OLED", "QLED", "WIFI", "USB", "SSD", "RAM", "JBL", "PS5", "VAT", "TVSH"]);
 
@@ -91,16 +91,66 @@ const PERSONAL_CONTEXT = rx(
   String.raw`\b(his|her|their|my|customer'?s?|buyer'?s?|on (?:the |my |this |that )?order|e tij|e saj|e porosis[eë]|n[eë] porosi)\b`,
 );
 
+const ORDER_CHANGE_RX: [OrderChangeKind, RegExp][] = [
+  [
+    "address",
+    rx(
+      String.raw`\b((?:change|update|correct|edit|fix|modify|switch)\w*\s+(?:\w+\s+){0,3}?address|wrong (?:delivery |shipping )?address|new (?:delivery |shipping )?address|(?:deliver|send|ship)\w*\s+(?:it\s+|them\s+|the order\s+)?to\s+(?:a\s+|my\s+)?(?:different|new|another|other)\s+address|(?:ndrysho|nd[eë]rro|korrigjo|p[eë]rdit[eë]so)\w*\s+(?:\w+\s+){0,3}?adres\w*|adres\w*\s+(?:e\s+|t[eë]\s+)?(?:re|gabuar|tjet[eë]r))\b`,
+    ),
+  ],
+  [
+    "remove_item",
+    rx(
+      String.raw`\b((?:remove|take\s+(?:off|out)|drop|delete)\s+(?:\w+\s+){0,4}?from\s+(?:my\s+|the\s+|this\s+|that\s+)?order|(?:remove|take\s+(?:off|out))\s+(?:the|one|a|my)\s+\w+|(?:don'?t|do not|no longer)\s+(?:want|need)\s+(?:the|one|both|a)\s+\w+|(?:reduce|lower|decrease)\s+(?:the\s+)?(?:quantity|qty|amount)|only\s+(?:want|need|keep)\s+(?:one|1)\b|(?:hiq|largo|fshi)\w*|vet[eë]m\s+nj[eë]\s+\w+|zvog[eë]lo\w*\s+sasi\w*)\b`,
+    ),
+  ],
+  [
+    "cancel",
+    rx(
+      String.raw`\b(cancel\w*|call\s+off\s+(?:my\s+|the\s+)?order|(?:don'?t|do not|no longer)\s+want\s+(?:the|my|this|that)\s+order|anul\w*|(?:nuk|s'?)\s*(?:e\s+)?dua\s+(?:m[eë]\s+)?porosi\w*|nd[eë]rpre\w*\s+porosi\w*)\b`,
+    ),
+  ],
+  [
+    "general",
+    rx(String.raw`\b((?:change|modify|edit|amend)\w*\s+(?:\w+\s+){0,2}?order|(?:ndrysho|modifiko)\w*\s+(?:\w+\s+){0,2}?porosi\w*)\b`),
+  ],
+];
+
+function readOrderChange(text: string): Detection & { kinds: OrderChangeKind[] } {
+  const kinds: OrderChangeKind[] = [];
+  const evidence: string[] = [];
+  for (const [kind, re] of ORDER_CHANGE_RX) {
+    const m = text.match(re);
+    if (m) {
+      kinds.push(kind);
+      evidence.push(`Asks to change the order (${kind.replace("_", " ")}): “${m[0]}”`);
+    }
+  }
+  return { hit: kinds.length > 0, kinds, evidence };
+}
+
+export function productCategoriesIn(text: string): ProductCategory[] {
+  const t = normalize(text);
+  return PRODUCTS.filter((p) => p.re.test(t)).map((p) => p.category);
+}
+
+export function detectOrderChange(texts: string[]): OrderChangeKind[] {
+  return [...new Set(texts.flatMap((t) => readOrderChange(normalize(t)).kinds))];
+}
+
 // ---- intent ------------------------------------------------------------------
 
 const RETURN_RX = rx(
   String.raw`\b(return\w*|refund\w*|send (?:it|them) back|money back|t[aeë] kthej|t'i kthej|kthej\w*|kthim\w*|rikthim\w*|rimburs\w*|par[aeë]t[eë]? mbrapsht)\b`,
 );
 const FAULT_RX = rx(
-  String.raw`\b(broken|faulty|defect\w*|damaged|cracked|doesn'?t work|does not work|not working|won'?t (?:turn on|power on|charge|start|boot)|stopped working|dead|repair\w*|warranty|garanci\w*|prish\w*|defekt\w*|nuk (?:punon\w*|punoj\w*|ndiz\w*|karikoh\w*)|s'?punon\w*|s'?punoj\w*|s'?ndiz\w*|riparim\w*|servis\w*|i thyer|e thyer)\b`,
+  String.raw`\b(broken|faulty|defect\w*|damaged|cracked|doesn'?t work|does not work|not working|won'?t (?:turn on|power on|charge|start|boot)|stopped working|dead|repair\w*|warranty|garanci\w*|prish(?!t)\w*|defekt\w*|nuk (?:punon\w*|punoj\w*|ndiz\w*|karikoh\w*)|s'?punon\w*|s'?punoj\w*|s'?ndiz\w*|riparim\w*|servis\w*|i thyer|e thyer)\b`,
 );
 const DELIVERY_INFO_RX = rx(
   String.raw`\b(shipping (?:cost|fee|price|time)|delivery (?:cost|fee|price|time|charge)|how much (?:is|does) (?:shipping|delivery)|do you (?:deliver|ship)|deliver to|ship to|how long (?:does|will) (?:delivery|shipping|it take)|free (?:shipping|delivery)|sa kushton (?:d[eë]rgesa|transporti|posta)|a d[eë]rgoni|d[eë]rgoni n[eë]|a b[eë]ni d[eë]rgesa|sa dit[eë] (?:zgjat|merr)|transport(?:i)? falas)\b`,
+);
+const ORDER_LIST_RX = rx(
+  String.raw`\b(how many orders|how many order\b|my orders|what orders|list (?:all )?(?:my )?orders|check (?:how many orders|(?:all )?(?:my )?orders)|show (?:all )?(?:my )?orders|view (?:all )?(?:my )?orders|see (?:all )?(?:my )?orders|all (?:of )?my orders|any orders|order history|sa porosi\b|porosit[eë] e mia|cilat jan[eë] porosit[eë]|shiko porosit[eë]|m[eë] trego porosit[eë]|a kam (?:ndonj[eë] )?porosi|kam porosi)\b`,
 );
 const STATUS_RX = rx(
   String.raw`\b(where(?:'s| is) my|my order|status of my|check (?:my|on my) (?:order|package|parcel)|status\w*|porosi\w* (?:ime|time|t[eë] mia)|ku [eë]sht[eë] porosia|kontrollo\w* porosi\w*|hasn'?t (?:arrived|come)|has not (?:arrived|come)|not (?:arrived|delivered|received)|didn'?t (?:arrive|get)|never (?:arrived|received)|still (?:not|no|waiting)|tracking|track (?:my|the)|delivery status|order status|when will (?:it|my order)|delayed?|delay|late|s'?ka ardhur|nuk ka ardhur|nuk (?:m[eë] )?ka arritur|s'?ka arritur|ende s'|ende nuk|ku [eë]sht[eë] porosia|kur (?:vjen|arrin|do t[eë] vij[eë])|vones[eë]\w*|gjurmim\w*)`,
@@ -110,6 +160,13 @@ const PAYMENT_RX = rx(
 );
 const STORE_RX = rx(
   String.raw`\b(opening hours|open(?:ing)? times|hours|when (?:are|do) you (?:open|close)|are you open|where (?:are|is) (?:you|your (?:shop|store))|your (?:shop|store) address|store location|orari|orar\w*|ku ndodh\w*|ku jeni|jeni hapur|punoni (?:sot|t[eë] diel[eë]n|t[eë] shtun[eë]n))\b`,
+);
+
+const PRODUCT_SEARCH_RX = rx(
+  String.raw`\b(do you (?:have|sell|carry|stock)|what (?:laptops?|phones?|headphones?|chargers?|models?) do you|which (?:models?|laptops?|phones?|headphones?|chargers?)|in stock|out of stock|available in (?:store|stock)|recommend (?:a|an|me|some)|looking for (?:a |an |some )?(?:new )?(?:laptop|phone|smartphone|headphones?|earbuds|charger)|how much (?:is|are|does|do) (?:the|a|an|your) (?!shipping|delivery)|price (?:of|for)|prices? (?:on|for) (?:your )?(?:laptops?|phones?|headphones?|chargers?)|cheapest|(?:under|below|less than|up to) €?\s?\d+|a keni (?:n[eë] stok|laptop\w*|telefon\w*|kufje\w*|karikues\w*|iphone|samsung|xiaomi)|a shitni|n[eë] stok|sa kushton (?!d[eë]rgesa|transporti|posta)|sa kushtojn[eë]|[çc]mim\w* (?:e|i|p[eë]r)|m[eë] i liri|m[eë] e lira|m[eë] t[eë] lir[eë]t?|n[eë]n €?\s?\d+|m[eë] rekomando\w*|[çc]far[eë] (?:laptop\w*|telefon\w*|kufje\w*|karikues\w*|modele) keni)`,
+);
+const PRICE_CAP = rx(
+  String.raw`(?:under|below|less than|up to|max(?:imum)?|budget(?: of)?|n[eë]n|deri(?: n[eë])?|maksimum)\s*(?:€|eur(?:o|os)?\s*)?\s*(\d{1,5})(?:\s*(?:€|eur\w*))?`,
 );
 
 const MISSING_RX = rx(
@@ -203,6 +260,7 @@ function readPersonalData(
     const personal = hasOrderRef || thirdParty || PERSONAL_CONTEXT.test(sentence);
     if (!asking || !personal) continue;
     for (const field of Object.keys(PII_FIELDS) as PiiField[]) {
+      if (field === "address" && ORDER_CHANGE_RX[0][1].test(sentence)) continue;
       const m = sentence.match(PII_FIELDS[field]);
       if (m && !fields.includes(field)) {
         fields.push(field);
@@ -227,6 +285,11 @@ function readPolicyGap(topic: Detection & { topicId?: string }, book: PolicyBook
   return { hit: true, topicId: topic.topicId, evidence: [`${topic.evidence[0]} (no written policy)`] };
 }
 
+function readPriceCap(text: string): number | undefined {
+  const m = text.match(PRICE_CAP);
+  return m ? Number(m[1]) : undefined;
+}
+
 function readStatedDays(text: string): number | undefined {
   const d = [...text.matchAll(DAYS)].map((m) => Number(m[1]));
   if (d.length) return Math.max(...d);
@@ -240,10 +303,13 @@ function readIntent(
   s: Omit<Signals, "intent" | "language">,
 ): { value: Intent; evidence: string[] } {
   const missing = matches(MISSING_RX, text);
+  if (s.orderChange.hit) return { value: "order_change", evidence: s.orderChange.evidence };
   if (s.personalData.hit) return { value: "personal_data_request", evidence: s.personalData.evidence };
   if (s.topic.hit) {
     return { value: s.topic.topicId === "installments" ? "financing" : "other", evidence: s.topic.evidence };
   }
+  const orderList = matches(ORDER_LIST_RX, text);
+  if (orderList) return { value: "order_list", evidence: [`Keyword “${orderList}”`] };
   const checks: [Intent, RegExp][] = [
     ["return_request", RETURN_RX],
     ["product_fault", FAULT_RX],
@@ -260,6 +326,8 @@ function readIntent(
   const status = matches(STATUS_RX, text);
   if (status) return { value: "order_status", evidence: [`Keyword “${status}”`] };
   if (s.orderIds.length) return { value: "order_status", evidence: [`Mentions order #${s.orderIds[0]}`] };
+  const productSearch = matches(PRODUCT_SEARCH_RX, text);
+  if (productSearch) return { value: "product_search", evidence: [`Keyword “${productSearch}”`] };
   const pay = matches(PAYMENT_RX, text);
   if (pay) return { value: "payment_methods", evidence: [`Keyword “${pay}”`] };
   const store = matches(STORE_RX, text);
@@ -325,6 +393,8 @@ export function extractSignals(rawText: string, priorTexts: string[] = [], book?
     policyGap: readPolicyGap(topic, book),
     contextOrderId: orderIds.length ? undefined : lastOrderIdIn(priorTexts),
     reportsMissing: MISSING_RX.test(text),
+    orderChange: readOrderChange(text),
+    priceCap: readPriceCap(text),
     smallTalk: readSmallTalk(text),
   };
 

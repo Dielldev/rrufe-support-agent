@@ -17,8 +17,11 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["@libsql/client", "libsql"],
   // db/schema.sql + db/seed.sql are read at runtime to create an empty database.
   outputFileTracingIncludes: {
-    "/**/*": ["./db/schema.sql", "./db/seed.sql"],
-    "/": ["./db/schema.sql", "./db/seed.sql"],
+    "/**/*": ["./db/schema.sql", "./db/seed.sql", "./db/extensions.sql"],
+    "/": ["./db/schema.sql", "./db/seed.sql", "./db/extensions.sql"],
+  },
+  images: {
+    remotePatterns: [{ protocol: "https", hostname: "m.media-amazon.com", pathname: "/images/I/**" }],
   },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];

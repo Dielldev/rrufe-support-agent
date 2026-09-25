@@ -54,7 +54,7 @@ export default async function SettingsPage() {
     <div className="mx-auto w-full max-w-3xl px-4 pt-4 pb-12 sm:px-6">
       <PageHeader
         title="Settings"
-        description="The engine is picked automatically from the keys you have: Jev when an AI Gateway key is set, otherwise Groq, otherwise the rules alone. Either way, the rules and the guard make the final call."
+        description="The engine is picked automatically from the keys you have: Jev when an AI Gateway key is set, otherwise Groq, otherwise the rules alone. The rules and the guard decide what needs a person; the agent answers the rest, with access decided in code."
       />
 
       <h2 className="mb-3 text-sm font-semibold">Engines</h2>
@@ -68,10 +68,16 @@ export default async function SettingsPage() {
           hint="The model proposes a typed decision; deterministic rules set the floor and the guard locks it."
         />
         <Row
+          label="Agent"
+          value={status.agent.label}
+          live={status.agent.live}
+          hint="Writes the reply with tools scoped to the sender's own records, the catalog and the policy. Runs only when the intake checks don't hand the message to a person. AGENT_DISABLED=1 turns it off."
+        />
+        <Row
           label="Phrasing"
           value={status.phrasing.label}
           live={status.phrasing.live}
-          hint="Runs only after the decision is locked. When fallback is disabled, a live AI phrasing model is strictly required."
+          hint="Rewrites the fixed rule path's approved draft after the decision is locked: handoff replies, and every reply when the agent is off. When fallback is disabled, a live AI model is strictly required."
         />
         <Row
           label="Template fallback (Regex)"
