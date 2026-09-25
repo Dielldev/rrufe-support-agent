@@ -1,9 +1,11 @@
 "use client";
 
-import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ProgressEvent, RunMode, Sender, ThreadMessage, TriageResult } from "@/lib/engine/types";
 import type { CustomerPersona } from "@/lib/db/repo";
 import { setActiveCustomer as setCookieCustomer } from "@/app/actions/user";
+import { listMyChats, openChat as loadChat, removeChat } from "@/app/actions/chats";
+import type { ChatSummary } from "@/lib/db/chats";
 import { SCENARIOS } from "@/lib/scenarios";
 
 export interface ProgressStep {
@@ -51,6 +53,10 @@ interface ChatContextValue {
   focusSignal: number;
   send: () => void;
   reset: () => void;
+  chats: ChatSummary[];
+  chatId: string | null;
+  openChat: (id: string) => Promise<void>;
+  deleteChat: (id: string) => Promise<void>;
 }
 
 const ChatContext = createContext<ChatContextValue | null>(null);
@@ -88,11 +94,12 @@ export async function triageStream(
   mode: RunMode,
   thread: ThreadMessage[],
   onEvent: (e: ProgressEvent) => void,
+  sessionId?: string | null,
 ): Promise<TriageResult> {
   const res = await fetch("/api/triage", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text, senderId, mode, thread, record: true, stream: true }),
+    body: JSON.stringify({ text, senderId, mode, thread, record: true, stream: true, sessionId: sessionId ?? undefined }),
   });
   if (!res.ok || !res.body) {
     const body = await res.json().catch(() => ({}));
@@ -143,7 +150,7 @@ export function ChatProvider({
 }) {
   const [activeCustomerId, setActiveCustomerIdState] = useState<string | null>(initialCustomerId);
   // Show modal if user has never selected a customer account yet
-  const [isUserPickerOpen, setIsUserPickerOpen] = useState(!initialCustomerId);
+  const [isUserPickerOpen, setIsUserPickerOpen] = useState(true);
 
   const activeCustomer = useMemo(
     () => (activeCustomerId ? personas.find((p) => p.id === activeCustomerId) : undefined),
@@ -167,6 +174,33 @@ export function ChatProvider({
   const [mode, setMode] = useState<RunMode>("standard");
   const [focusSignal, setFocusSignal] = useState(0);
   const history = useRef<Exchange[]>([]);
+  const [chats, setChats] = useState<ChatSummary[]>([]);
+  const [chatId, setChatIdState] = useState<string | null>(null);
+  const chatRef = useRef<string | null>(null);
+  const setChatId = (id: string | null) => {
+    chatRef.current = id;
+    setChatIdState(id);
+  };
+
+  const refreshChats = useCallback(async () => {
+    try {
+      setChats(await listMyChats());
+    } catch {
+      setChats([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    listMyChats()
+      .then((list) => {
+        if (alive) setChats(list);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [activeCustomerId]);
 
   const commit = (next: Exchange[]) => {
     history.current = next;
@@ -181,6 +215,7 @@ export function ChatProvider({
 
   const reset = useCallback(() => {
     commit([]);
+    setChatId(null);
     setDraft("");
     setFocusSignal((n) => n + 1);
   }, []);
@@ -193,8 +228,35 @@ export function ChatProvider({
       reset();
       setIsUserPickerOpen(false);
       await setCookieCustomer(customerId);
+      await refreshChats();
     },
-    [findPrimarySender, reset],
+    [findPrimarySender, reset, refreshChats],
+  );
+
+  const openChat = useCallback(
+    async (id: string) => {
+      if (busy) return;
+      const chat = await loadChat(id);
+      if (!chat) {
+        await refreshChats();
+        return;
+      }
+      commit(chat.messages.map((m) => ({ id: m.id, text: m.text, senderId: m.senderId, mode: "standard" as const, result: m.result })));
+      setChatId(id);
+      setSenderId(chat.senderId);
+      setDraft("");
+      setFocusSignal((n) => n + 1);
+    },
+    [busy, refreshChats],
+  );
+
+  const deleteChat = useCallback(
+    async (id: string) => {
+      await removeChat(id);
+      if (chatRef.current === id) reset();
+      await refreshChats();
+    },
+    [refreshChats, reset],
   );
 
   const send = useCallback(async () => {
@@ -211,7 +273,17 @@ export function ChatProvider({
     const update = (fn: (e: Exchange) => Exchange) => commit(history.current.map((e) => (e.id === id ? fn(e) : e)));
     let patch: Partial<Exchange>;
     try {
-      const result = await triageStream(text, senderId, mode, thread, (ev) => update((ex) => applyEvent(ex, ev)));
+      const result = await triageStream(text, senderId, mode, thread, (ev) => update((ex) => applyEvent(ex, ev)), chatRef.current);
+      if (result.sessionId) setChatId(result.sessionId);
+      console.info("[agent] reply trace", {
+        intent: result.intent,
+        gate: result.why.firedRule.id,
+        decision: result.decision,
+        model: result.agent?.model ?? result.why.phrasing.engine,
+        tools: (result.agent?.toolCalls ?? []).map((t) => `${t.tool}:${t.access}`),
+        checks: result.why.phrasing.issues.map((i) => i.check),
+        actions: result.why.actions.map((a) => a.label),
+      });
       patch = { result, partial: undefined, elapsedMs: Date.now() - startedAt };
       update((e) => ({ ...e, steps: e.steps?.map((st) => (st.status === "active" ? { ...st, status: "done" as const } : st)) }));
     } catch (err) {
@@ -220,7 +292,8 @@ export function ChatProvider({
     update((e) => ({ ...e, ...patch }));
     setBusy(false);
     setFocusSignal((n) => n + 1);
-  }, [draft, busy, senderId, mode]);
+    void refreshChats();
+  }, [draft, busy, senderId, mode, refreshChats]);
 
   const value = useMemo(
     () => ({
@@ -244,6 +317,10 @@ export function ChatProvider({
       focusSignal,
       send,
       reset,
+      chats,
+      chatId,
+      openChat,
+      deleteChat,
     }),
     [
       senders,
@@ -263,6 +340,10 @@ export function ChatProvider({
       focusSignal,
       send,
       reset,
+      chats,
+      chatId,
+      openChat,
+      deleteChat,
     ],
   );
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;

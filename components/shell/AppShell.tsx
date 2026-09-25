@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, type ComponentType, type FormEvent, type ReactNode } from "react";
-import { BookIcon, ChatIcon, FlowIcon, GearIcon, HumanIcon, PackageIcon, PlusIcon, SearchIcon, TestIcon } from "../icons";
+import { BookIcon, ChatIcon, FlowIcon, GearIcon, HumanIcon, PackageIcon, PlusIcon, SearchIcon, TestIcon, XIcon } from "../icons";
 import type { Sender } from "@/lib/engine/types";
 import type { CustomerPersona } from "@/lib/db/repo";
 import { ChatProvider, useChat } from "./ChatProvider";
@@ -16,7 +16,7 @@ const NAV: { href: string; label: string; icon: IconType }[] = [
   { href: "/orders", label: "Orders", icon: PackageIcon },
   { href: "/policies", label: "Policies", icon: BookIcon },
   { href: "/tests", label: "Tests", icon: TestIcon },
-  { href: "/flow", label: "Decision flow", icon: FlowIcon },
+  { href: "/flow", label: "Agent map", icon: FlowIcon },
   { href: "/settings", label: "Settings", icon: GearIcon },
 ];
 
@@ -47,6 +47,7 @@ function Frame({ children }: { children: ReactNode }) {
   return (
     <div className="flex h-dvh min-w-0 overflow-hidden bg-surface">
       <Rail pathname={pathname} />
+      {pathname === "/" && <ChatHistory />}
       <div className="relative flex min-w-0 flex-1 flex-col">
         {showGlow && (
           <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-72">
@@ -60,6 +61,68 @@ function Frame({ children }: { children: ReactNode }) {
         </main>
       </div>
     </div>
+  );
+}
+
+function ago(sqlTime: string): string {
+  const then = new Date(`${sqlTime.replace(" ", "T")}Z`).getTime();
+  const mins = Math.max(0, Math.round((Date.now() - then) / 60000));
+  if (mins < 1) return "now";
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.round(hours / 24)}d`;
+}
+
+function ChatHistory() {
+  const { chats, chatId, openChat, deleteChat, reset, busy } = useChat();
+  return (
+    <aside aria-label="Chat history" className="hidden w-60 shrink-0 flex-col border-r border-line md:flex">
+      <div className="flex h-14 shrink-0 items-center justify-between px-4">
+        <span className="text-[13px] font-semibold text-ink">Chats</span>
+        <button
+          type="button"
+          onClick={reset}
+          disabled={busy}
+          className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium text-muted transition hover:bg-hover hover:text-ink disabled:opacity-50"
+        >
+          <PlusIcon size={12} />
+          New
+        </button>
+      </div>
+      <div className="scroll-soft min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+        {chats.length === 0 ? (
+          <p className="px-2 py-3 text-xs text-faint">Your conversations will show up here.</p>
+        ) : (
+          <ul className="space-y-0.5">
+            {chats.map((c) => (
+              <li key={c.id} className="group relative">
+                <button
+                  type="button"
+                  onClick={() => openChat(c.id)}
+                  disabled={busy}
+                  aria-current={c.id === chatId ? "true" : undefined}
+                  className={`flex w-full items-center gap-2 rounded-lg py-2 pr-8 pl-2.5 text-left text-[13px] transition ${
+                    c.id === chatId ? "bg-hover text-ink" : "text-ink-2 hover:bg-hover/70 hover:text-ink"
+                  }`}
+                >
+                  <span className="min-w-0 flex-1 truncate">{c.title}</span>
+                  <span className="shrink-0 text-[11px] text-faint group-hover:opacity-0">{ago(c.updatedAt)}</span>
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Delete chat: ${c.title}`}
+                  onClick={() => deleteChat(c.id)}
+                  className="absolute top-1/2 right-1.5 grid size-6 -translate-y-1/2 place-items-center rounded-md text-muted opacity-0 transition group-hover:opacity-100 hover:bg-surface hover:text-ink focus-visible:opacity-100"
+                >
+                  <XIcon size={12} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </aside>
   );
 }
 
