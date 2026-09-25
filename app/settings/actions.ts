@@ -34,8 +34,7 @@ export async function setFallbackMode(allowed: boolean): Promise<void> {
 
 /**
  * Put the database back to db/schema.sql + db/seed.sql. Reachable by direct POST
- * like any Server Function, so it re-checks the permission itself; on a deployment
- * the whole site also sits behind DEMO_PASSWORD (proxy.ts).
+ * like any Server Function, so it re-checks the permission itself.
  */
 export async function resetDemoData(): Promise<void> {
   if (!(await resetAllowed())) throw new Error("Resetting this database is disabled.");

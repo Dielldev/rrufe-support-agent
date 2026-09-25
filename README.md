@@ -47,7 +47,6 @@ cp .env.example .env.local   # set GROQ_API_KEY now; add AI_GATEWAY_API_KEY late
 | `AGENT_MODEL` / `GROQ_AGENT_MODEL` | Tool-calling model for the agent on the gateway / on Groq |
 | `AGENT_DISABLED=1` | Turn the agent off; the fixed rule paths answer everything |
 | `USE_AI_GATEWAY=1` | Use the OIDC token Vercel injects instead of an API key (opt-in, so the token alone never switches engines) |
-| `DEMO_PASSWORD` / `DEMO_USER` | When set, the whole site and API sit behind HTTP Basic auth (user defaults to `rrufe`) |
 | `JEV_DISABLED=1` / `GROQ_DISABLED=1` / `PHRASING_DISABLED=1` | Switch any of them off |
 
 The Settings page shows which engines are live. If the model times out, errors or returns a label outside the fixed list, the guard records it and the rules decide alone.
