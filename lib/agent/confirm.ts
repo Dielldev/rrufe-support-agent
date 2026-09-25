@@ -33,5 +33,19 @@ export function confirmChanges(ledger: ToolLedger, language: Language): string {
     : language === "sq"
       ? "Nëse keni pyetur edhe për diçka tjetër, ju lutem na shkruani sërish."
       : "If you asked about anything else too, please write again.";
-  return `${language === "sq" ? "U krye!" : "Done!"} ${done} ${rest}`;
+  const sq = language === "sq";
+  const opening = ledger.changes.length ? `${sq ? "U krye!" : "Done!"} ${done}` : sq ? "Na vjen keq për vonesën." : "Sorry for the delay.";
+  const trace = ledger.actions.find((a) => a.kind === "carrier_trace")?.detail.match(/TRC-\d+/)?.[0];
+  const traced = trace ? (sq ? `I kërkova korrierit ta gjurmojë porosinë (referenca ${trace}).` : `I've asked the courier to trace it (reference ${trace}).`) : "";
+  const voucher = ledger.vouchers[0];
+  const given = voucher
+    ? voucher.alreadyIssued
+      ? sq
+        ? "Për këtë vonesë keni marrë tashmë kompensim, që e shihni më poshtë."
+        : "You already received compensation for this delay; it's shown below."
+      : sq
+        ? "Për pritjen, më poshtë keni një kupon për porosinë e ardhshme."
+        : "For the wait, there's a voucher for your next order below."
+    : "";
+  return [opening, traced, given, rest].filter(Boolean).join(" ");
 }

@@ -398,7 +398,7 @@ export function createSupportTools(grant: AccessGrant, ledger: ToolLedger, custo
             output: {
               issued: !alreadyIssued,
               already_issued_earlier: alreadyIssued,
-              voucher: { reward: what, valid_until: card.expiresOn, shown_to_customer_as_card: true, redeemed: voucher.redeemed },
+              voucher: { reward: what, is: "compensation for the delay", valid_until: card.expiresOn, shown_to_customer_as_card: true, redeemed: voucher.redeemed },
               rules: "One voucher per delayed order. Not cash, not transferable, not combined with other vouchers.",
             },
             access: "action",

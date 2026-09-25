@@ -248,7 +248,7 @@ export async function runPipeline(
   if (!outcome.ok) {
     const err = outcome.error;
     if (!(err instanceof AgentRejectedError)) throw err;
-    if (err.ledger.changes.length) {
+    if (err.ledger.changes.length || err.ledger.vouchers.length) {
       emit({ type: "text-reset" });
       const run: AgentRunResult = { text: confirmChanges(err.ledger, stage.signals.language), decision: derivedDecision(err.ledger), ledger: err.ledger, view: err.view };
       return agentResult(stage, run, { started, classifierMs: stage.classifierMs, agentMs: outcome.ms });
@@ -418,7 +418,7 @@ async function rulePath(
       actions: baseActions,
       withheld: rules.withheld,
       handoff,
-      phrasing: failedView ? { ...phrasing.view, rejectedDraft: failedView.rejectedDraft, issues: [...failedView.issues, ...phrasing.view.issues] } : phrasing.view,
+      phrasing: failedView ? { ...phrasing.view, rejectedDraft: failedView.rejectedDraft, issues: [...new Map([...failedView.issues, ...phrasing.view.issues].map((i) => [`${i.check}|${i.detail}`, i])).values()] } : phrasing.view,
     },
     agent: failedView,
     intent: signals.intent.value,

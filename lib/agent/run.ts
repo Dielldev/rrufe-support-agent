@@ -145,7 +145,7 @@ export async function runAgent(input: AgentRunInput, agent: AgentModel, opts: Ag
   } catch (err) {
     const unreachable = err instanceof AgentRejectedError && err.view.issues.some((i) => i.check === "model_error");
     const left = total - (performance.now() - started);
-    if (!unreachable || err.ledger.changes.length > 0 || opts.signal?.aborted || left < 4000) throw err;
+    if (!unreachable || (err.ledger.changes.length > 0 || err.ledger.vouchers.length > 0) || opts.signal?.aborted || left < 4000) throw err;
     opts.onEvent?.({ type: "text-reset" });
     return runAgentOnce(input, agent.fallback, { ...opts, budgetMs: Math.round(left) });
   }
@@ -214,6 +214,8 @@ async function runAgentOnce(input: AgentRunInput, agent: AgentModel, opts: Agent
       emit({ type: "step", id: thinkId, label: next, status: "active" });
     };
 
+    const timeLimit = AbortSignal.timeout(Math.max(1000, Math.round(deadline - performance.now())));
+    const abortSignal = opts.signal ? AbortSignal.any([opts.signal, timeLimit]) : timeLimit;
     const result = streamText({
       model: agent.model,
       instructions,
@@ -224,9 +226,7 @@ async function runAgentOnce(input: AgentRunInput, agent: AgentModel, opts: Agent
       maxOutputTokens: 1500,
       // One quick retry at most: a rate-limit wait of 30s+ is worse than answering from the rule path.
       maxRetries: agent.simulated ? 0 : 1,
-      abortSignal: opts.signal
-        ? AbortSignal.any([opts.signal, AbortSignal.timeout(Math.max(1000, Math.round(deadline - performance.now())))])
-        : AbortSignal.timeout(Math.max(1000, Math.round(deadline - performance.now()))),
+      abortSignal,
       providerOptions: agent.providerOptions,
     });
 
@@ -275,6 +275,7 @@ async function runAgentOnce(input: AgentRunInput, agent: AgentModel, opts: Agent
             throw part.error;
         }
       }
+      if (abortSignal.aborted) throw abortSignal.reason ?? new Error("The model ran out of time");
     } catch (err) {
       stopThinking("failed");
       throw err;
@@ -340,7 +341,7 @@ async function runAgentOnce(input: AgentRunInput, agent: AgentModel, opts: Agent
     emit({ type: "step", id: checkId, label: checkLabel, status: "failed" });
     throw new AgentRejectedError(
       `The agent's reply failed the output checks twice: ${retryIssues.map((i) => i.detail).join("; ")}`,
-      view({ rejectedDraft: draft || retry || undefined, issues: [...issues, ...retryIssues] }),
+      view({ rejectedDraft: draft || retry || undefined, issues: [...new Map([...issues, ...retryIssues].map((i) => [`${i.check}|${i.detail}`, i])).values()] }),
       ledger,
     );
   }
