@@ -8,9 +8,9 @@ import { OPS, shopNow } from "@/lib/shop/operations";
 import { agentProvider, decisionProvider, phrasingProvider } from "./config";
 import { gatherFacts, type FactSheet } from "./facts";
 import { guard, mergeSignals, type GuardResult } from "./guard";
-import { groqConfigured, groqProposer } from "./groq";
+import { groqConfigured, groqProposer, openRouterProposer } from "./groq";
 import { buildJevState, jevProposer, overconfidentProposer, type Proposer } from "./jev";
-import { gatewayPhraser, groqPhraser, phraseReply, roguePhraser, type Phraser } from "./phrasing";
+import { gatewayPhraser, groqPhraser, openRouterPhraser, phraseReply, roguePhraser, type Phraser } from "./phrasing";
 import { decide, type RulesOutcome } from "./rules";
 import { extractSignals } from "./signals";
 import { daysBetween, isoDay } from "./text";
@@ -52,8 +52,22 @@ export function depsForMode(mode: RunMode, allowFallback: boolean = false): Pipe
   const phrasing = phrasingProvider();
   const agent = agentProvider();
   return {
-    proposer: decision === "jev" ? jevProposer() : decision === "groq" ? groqProposer() : null,
-    phraser: phrasing === "gateway" ? gatewayPhraser() : phrasing === "groq" ? groqPhraser() : null,
+    proposer:
+      decision === "jev"
+        ? jevProposer()
+        : decision === "openrouter"
+          ? openRouterProposer()
+          : decision === "groq"
+            ? groqProposer()
+            : null,
+    phraser:
+      phrasing === "gateway"
+        ? gatewayPhraser()
+        : phrasing === "openrouter"
+          ? openRouterPhraser()
+          : phrasing === "groq"
+            ? groqPhraser()
+            : null,
     agent:
       agent === "openrouter"
         ? openRouterAgent(groqConfigured() && process.env.GROQ_DISABLED !== "1" ? groqAgent() : undefined)

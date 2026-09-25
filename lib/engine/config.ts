@@ -3,12 +3,13 @@ import { groqConfigured, groqModelId, groqPhrasingModelId } from "./groq";
 import { JEV_MODEL_ID } from "./jev";
 import { DEFAULT_PHRASING_MODEL } from "./phrasing";
 
-export type DecisionProvider = "jev" | "groq" | "rules";
-export type PhrasingProvider = "gateway" | "groq" | "templates";
+export type DecisionProvider = "jev" | "openrouter" | "groq" | "rules";
+export type PhrasingProvider = "gateway" | "openrouter" | "groq" | "templates";
 export type AgentProvider = "openrouter" | "gateway" | "groq" | "none";
 
 export interface EngineStatus {
   gateway: boolean;
+  openrouter: boolean;
   groq: boolean;
   fallbackAllowed: boolean;
   decision: { live: boolean; provider: DecisionProvider; label: string };
@@ -24,6 +25,10 @@ export interface EngineStatus {
 export function gatewayConfigured(): boolean {
   if (process.env.AI_GATEWAY_API_KEY) return true;
   return process.env.USE_AI_GATEWAY === "1" && Boolean(process.env.VERCEL_OIDC_TOKEN);
+}
+
+export function openRouterConfigured(): boolean {
+  return Boolean(process.env.OPENROUTER_API_KEY);
 }
 
 /**
@@ -44,10 +49,11 @@ export function fallbackEnabled(override?: boolean | string | null): boolean {
 
 /**
  * The engine picks itself from whatever keys exist: Jev when the gateway is
- * configured, otherwise Groq, otherwise the deterministic rules alone.
+ * configured, otherwise OpenRouter, otherwise Groq, otherwise the deterministic rules alone.
  */
 export function decisionProvider(): DecisionProvider {
   if (gatewayConfigured() && process.env.JEV_DISABLED !== "1") return "jev";
+  if (openRouterConfigured() && process.env.OPENROUTER_DISABLED !== "1") return "openrouter";
   if (groqConfigured() && process.env.GROQ_DISABLED !== "1") return "groq";
   return "rules";
 }
@@ -55,6 +61,7 @@ export function decisionProvider(): DecisionProvider {
 export function phrasingProvider(): PhrasingProvider {
   if (process.env.PHRASING_DISABLED === "1") return "templates";
   if (gatewayConfigured()) return "gateway";
+  if (openRouterConfigured() && process.env.OPENROUTER_DISABLED !== "1") return "openrouter";
   if (groqConfigured() && process.env.GROQ_DISABLED !== "1") return "groq";
   return "templates";
 }
@@ -78,13 +85,20 @@ export function engineStatus(fallbackOverride?: boolean | string | null): Engine
   const fallback = fallbackEnabled(fallbackOverride);
   return {
     gateway: gatewayConfigured(),
+    openrouter: openRouterConfigured(),
     groq: groqConfigured(),
     fallbackAllowed: fallback,
     decision: {
       live: decision !== "rules",
       provider: decision,
       label:
-        decision === "jev" ? `Jev (${JEV_MODEL_ID}) + rules guard` : decision === "groq" ? `Groq (${groqModelId()}) + rules guard` : "Rules only",
+        decision === "jev"
+          ? `Jev (${JEV_MODEL_ID}) + rules guard`
+          : decision === "openrouter"
+            ? `OpenRouter (${openRouterModelIds()[0]}) + rules guard`
+            : decision === "groq"
+              ? `Groq (${groqModelId()}) + rules guard`
+              : "Rules only",
     },
     phrasing: {
       live: phrasing !== "templates",
@@ -92,11 +106,13 @@ export function engineStatus(fallbackOverride?: boolean | string | null): Engine
       label:
         phrasing === "gateway"
           ? process.env.PHRASING_MODEL || DEFAULT_PHRASING_MODEL
-          : phrasing === "groq"
-            ? `Groq (${groqPhrasingModelId()})`
-            : fallback
-              ? "Approved templates (Fallback enabled)"
-              : "Disabled (Pure AI required)",
+          : phrasing === "openrouter"
+            ? `OpenRouter (${process.env.OPENROUTER_PHRASING_MODEL || openRouterModelIds()[0]})`
+            : phrasing === "groq"
+              ? `Groq (${groqPhrasingModelId()})`
+              : fallback
+                ? "Approved templates (Fallback enabled)"
+                : "Disabled (Pure AI required)",
     },
     agent: {
       live: agent !== "none",

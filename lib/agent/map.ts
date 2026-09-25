@@ -1,6 +1,6 @@
 import { getPolicyBook } from "@/lib/db/repo";
 import { agentProvider, decisionProvider } from "@/lib/engine/config";
-import { groqModelId } from "@/lib/engine/groq";
+import { groqConfigured, groqModelId } from "@/lib/engine/groq";
 import { groqAgentModelId, openRouterModelIds } from "./models";
 import { SKILLS } from "./prompt";
 import { TOOL_NAMES } from "./tools";
@@ -26,7 +26,7 @@ export async function agentMap() {
   const agent = agentProvider();
   const agentModels =
     agent === "openrouter"
-      ? [...openRouterModelIds().map((m) => `openrouter/${m}`), `groq/${groqAgentModelId()}`]
+      ? [...openRouterModelIds().map((m) => `openrouter/${m}`), ...(groqConfigured() && process.env.GROQ_DISABLED !== "1" ? [`groq/${groqAgentModelId()}`] : [])]
       : agent === "groq"
         ? [`groq/${groqAgentModelId()}`]
         : agent === "gateway"
@@ -65,7 +65,15 @@ export async function agentMap() {
       policies: policies.topics,
     },
     skills: SKILLS.map((s) => ({ name: s.name, when: s.description })),
-    models: { agent: agentModels, classifier: decisionProvider() === "groq" ? `groq/${groqModelId()}` : decisionProvider() },
+    models: {
+      agent: agentModels,
+      classifier:
+        decisionProvider() === "groq"
+          ? `groq/${groqModelId()}`
+          : decisionProvider() === "openrouter"
+            ? `openrouter/${openRouterModelIds()[0]}`
+            : decisionProvider(),
+    },
   };
 }
 

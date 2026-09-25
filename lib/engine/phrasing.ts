@@ -1,5 +1,7 @@
 import { groq } from "@ai-sdk/groq";
+import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { generateText, type LanguageModel } from "ai";
+import { DEFAULT_OPENROUTER_MODELS, openRouterModelIds } from "@/lib/agent/models";
 import { OPS } from "@/lib/shop/operations";
 import { groqPhrasingModelId, groqProviderOptions } from "./groq";
 import { safeModelError } from "./errors";
@@ -39,6 +41,14 @@ const STANCE: Record<ReplyBrief["decision"], string> = {
 /** Phrasing through AI Gateway (used when a gateway key is configured). */
 export function gatewayPhraser(modelId: string = process.env.PHRASING_MODEL || DEFAULT_PHRASING_MODEL): Phraser {
   return modelPhraser(modelId, modelId, { gateway: { zeroDataRetention: true } });
+}
+
+/** Phrasing through OpenRouter (used when an OpenRouter key is configured). */
+export function openRouterPhraser(
+  modelId: string = process.env.OPENROUTER_PHRASING_MODEL || openRouterModelIds()[0] || DEFAULT_OPENROUTER_MODELS[0],
+): Phraser {
+  const provider = createOpenRouter({ apiKey: process.env.OPENROUTER_API_KEY, appName: "Rrufe Support", appUrl: "https://rrufe.local" });
+  return modelPhraser(provider.chat(modelId, { extraBody: { provider: { sort: "throughput" } } }), `openrouter/${modelId}`, {});
 }
 
 /** Phrasing through Groq (used when only a Groq key is configured). */
@@ -267,7 +277,7 @@ export async function phraseReply(
   if (!phraser) {
     if (!allowFallback) {
       throw new Error(
-        "AI phrasing model is required: No API key configured (set GROQ_API_KEY or AI_GATEWAY_API_KEY). Template fallback is disabled in settings.",
+        "AI phrasing model is required: No API key configured (set OPENROUTER_API_KEY, GROQ_API_KEY or AI_GATEWAY_API_KEY). Template fallback is disabled in settings.",
       );
     }
     return { text: draft, view: { engine: "template", issues: [] } };

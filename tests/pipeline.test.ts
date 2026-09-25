@@ -239,14 +239,18 @@ describe("engine selection", () => {
   afterEach(() => {
     process.env = { ...saved };
   });
-  it("uses Jev when a gateway key exists, else Groq, else rules", () => {
+  it("uses Jev when a gateway key exists, else OpenRouter, else Groq, else rules", () => {
     delete process.env.AI_GATEWAY_API_KEY;
     delete process.env.USE_AI_GATEWAY;
+    delete process.env.OPENROUTER_API_KEY;
     delete process.env.GROQ_API_KEY;
     expect(decisionProvider()).toBe("rules");
     process.env.GROQ_API_KEY = "test";
     expect(decisionProvider()).toBe("groq");
     expect(phrasingProvider()).toBe("groq");
+    process.env.OPENROUTER_API_KEY = "test";
+    expect(decisionProvider()).toBe("openrouter");
+    expect(phrasingProvider()).toBe("openrouter");
     process.env.AI_GATEWAY_API_KEY = "test";
     expect(decisionProvider()).toBe("jev");
   });

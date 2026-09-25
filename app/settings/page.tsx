@@ -54,11 +54,12 @@ export default async function SettingsPage() {
     <div className="mx-auto w-full max-w-3xl px-4 pt-4 pb-12 sm:px-6">
       <PageHeader
         title="Settings"
-        description="The engine is picked automatically from the keys you have: Jev when an AI Gateway key is set, otherwise Groq, otherwise the rules alone. The rules and the guard decide what needs a person; the agent answers the rest, with access decided in code."
+        description="The engine is picked automatically from the keys you have: OpenRouter or Groq for the agent and phrasing, Jev when an AI Gateway key is set, otherwise the rules alone. The rules and the guard decide what needs a person; the agent answers the rest, with access decided in code."
       />
 
       <h2 className="mb-3 text-sm font-semibold">Engines</h2>
       <div className="divide-y divide-line rounded-xl border border-line">
+        <Row label="OpenRouter" value={status.openrouter ? "Connected" : "Not configured"} live={status.openrouter} />
         <Row label="AI Gateway (Jev)" value={status.gateway ? "Connected" : "Not configured"} live={status.gateway} />
         <Row label="Groq" value={status.groq ? "Connected" : "Not configured"} live={status.groq} />
         <Row
@@ -117,11 +118,11 @@ export default async function SettingsPage() {
         </form>
       </div>
 
-      {!status.gateway && (
+      {(!status.openrouter || !status.groq) && (
         <div className="mt-4 rounded-xl bg-sunken px-4 py-3.5 text-[13px] text-ink-2">
           Add keys to <span className="font-mono text-xs">.env.local</span> and restart the server:
           <pre className="mt-2 overflow-x-auto rounded-lg bg-surface px-3 py-2 font-mono text-xs leading-5 text-ink ring-1 ring-line">
-            {"GROQ_API_KEY=gsk_...          # used now\nAI_GATEWAY_API_KEY=...         # when set, Jev takes over"}
+            {"OPENROUTER_API_KEY=sk-or-v1-...  # agent + phrasing\nGROQ_API_KEY=gsk_...          # classifier fallback\nAI_GATEWAY_API_KEY=...         # when set, Jev takes over"}
           </pre>
         </div>
       )}

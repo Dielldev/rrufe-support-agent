@@ -1,5 +1,7 @@
 import { groq } from "@ai-sdk/groq";
+import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { generateText, Output, type LanguageModel } from "ai";
+import { DEFAULT_OPENROUTER_MODELS, openRouterModelIds } from "@/lib/agent/models";
 import { z } from "zod";
 import { safeModelError } from "./errors";
 import { JEV_QUESTIONS, type JevState, type Proposer } from "./jev";
@@ -119,4 +121,17 @@ export async function proposeWithLanguageModel(
 
 export function groqProposer(modelId: string = groqModelId()): Proposer {
   return (state) => proposeWithLanguageModel(groq(modelId), state, `groq/${modelId}`, "Groq", groqProviderOptions(modelId));
+}
+
+export function openRouterProposer(
+  modelId: string = process.env.OPENROUTER_MODEL || openRouterModelIds()[0] || DEFAULT_OPENROUTER_MODELS[0],
+): Proposer {
+  const provider = createOpenRouter({ apiKey: process.env.OPENROUTER_API_KEY, appName: "Rrufe Support", appUrl: "https://rrufe.local" });
+  return (state) =>
+    proposeWithLanguageModel(
+      provider.chat(modelId, { extraBody: { provider: { sort: "throughput" } } }),
+      state,
+      `openrouter/${modelId}`,
+      "OpenRouter",
+    );
 }
